@@ -1,0 +1,7 @@
+
+# --- dual-agent setup (managed by setup-dual-agent skill) ---
+.agents/local.json
+.agents/generated/
+.codex/
+.claude/settings.local.json
+# --- end dual-agent setup ---

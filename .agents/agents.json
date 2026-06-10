@@ -1,0 +1,17 @@
+{
+  "_comment": "Canonical MCP server list for IN-meetings. This file is currently documentation-only — add entries here and mirror into Claude Code (.claude/settings.json or `claude mcp add`) and Codex (.codex/config.toml [mcp_servers.*]). The `agents-sync` npm package does NOT sync MCP servers; it syncs commands/hooks/skills.",
+  "mcpServers": {
+    "example-remote-sse": {
+      "url": "https://mcp.example.com/sse",
+      "targets": ["claude", "codex"]
+    },
+    "example-local-stdio": {
+      "command": "npx",
+      "args": ["@my-org/mcp-server", "/path/to/project"],
+      "env": {
+        "MY_ORG_API_KEY": "${MY_ORG_API_KEY}"
+      },
+      "targets": ["claude", "codex"]
+    }
+  }
+}
