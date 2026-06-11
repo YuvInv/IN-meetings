@@ -34,7 +34,9 @@ actually need):
 `{text,start,end,speaker_id,confidence}`, `speakers[]` `{id,name?,email?,side:internal|external}`.
 
 `metadata.json` (minimum):
-- `meeting`: `{title, start, end}` ISO-8601 (**calendar-authoritative** when matched), `calendar_event_id`
+- `meeting`: `{title, start, end, type: "call"|"in_person"}` ISO-8601 (**calendar-authoritative** when
+  matched), `calendar_event_id`. **In-person packages have no `audio_system.wav`** and all speakers are
+  on the mic track (ADR-011) — consuming skills must handle a missing system track.
 - `attendees[]`: `{name, email, side: internal|external, matched_crm_contact_id?}`
 - `company`: `{name, sevanta_deal_id?, dealigence_id?, matched: bool}` (null/`matched:false` when new)
 - `recording`: `{durations, tracks, sample_rate, capture_source_app, video: bool}`

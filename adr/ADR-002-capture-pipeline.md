@@ -46,6 +46,12 @@ The default-on alternative to video for slide context is **periodic screen-share
 which is far cheaper and captures the gold (slide text) without storing video. Recommendation:
 **audio-only default; video an explicit toggle; OCR the middle path.**
 
+**Two capture profiles (see ADR-011).** The above is the **call profile** (dual-track). For **in-person
+meetings** there is no remote audio, so the **in-person profile is mic-only**: AVAudioEngine →
+`audio_mic.wav`, no system tap, no `audio_system.wav`. Manual Record auto-selects the profile from the
+P3 detector (live call → dual-track; else → mic-only). In-person speaker separation moves from the easy
+2-track split to single-track diarization (ADR-003/ADR-011).
+
 **Meeting-end detection → auto-stop → post-process.** Stop when the meeting app closes/backgrounds AND
 mic-in-use falls, debounced ~20–30 s (so a brief pause or screen-share switch doesn't end the
 recording). Manual Stop always available on the banner. On stop: finalize WAVs, write the raw folder,

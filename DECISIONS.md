@@ -17,6 +17,13 @@ This file tracks significant architectural decisions made during development of 
 
 <!-- Decisions will be added here as development progresses. Newest last. -->
 
+### 2026-06-11 — Recording modes: manual capture + in-person meetings (ADR-011)
+- **Agent**: Claude Code (requirements from Yuval)
+- **Decision**: Added **manual Start Recording** (menu-bar + global hotkey) and a first-class **in-person (mic-only) capture profile**. Manual start **auto-picks the profile** from the P3 audio-process detector (live call → dual-track; else → mic-only). In-person is **manual-trigger only** (no calendar auto-prompt) but gets **per-speaker diarization from v1**. New ADR-011; ADR-001/002/003/005 + DESIGN + IMPLEMENTATION_PLAN updated; `meeting_type` added to the package; new de-risk prototype **P4 (in-person diarization)**.
+- **Rationale**: Manual covers the "auto-detect missed it" fallback and is the only viable trigger for face-to-face meetings (no app/remote audio to detect). In-person puts everyone on one mic, so the call-time 2-track me/them shortcut doesn't apply — single-track multi-speaker diarization is required and is a distinct, harder quality axis.
+- **Alternatives considered** (Yuval chose): calendar auto-prompt for in-person (rejected — manual only); merged in-person transcript for v1 (rejected — per-speaker from v1); manual always asks call-vs-in-person (rejected — auto-pick from audio signal).
+- **Consequences**: in-person diarization quality (Hebrew DER, overlap, room acoustics) is unproven → P4 prototype + dashboard manual speaker assignment as backstop. Global hotkey needs a permission-light mechanism. Downstream skills must handle packages with no `audio_system.wav` and all speakers on the mic track.
+
 ### 2026-06-11 — P3 prototype: call detection via Core Audio process I/O (not app/tab heuristics)
 - **Agent**: Claude Code (course-corrected by Yuval)
 - **Decision**: Meeting detection's primary signal is **Core Audio per-process audio I/O** — a process with **both input and output audio running** is a live call, identified by `kAudioProcessPropertyBundleID`. ADR-001 revised. The frontmost-app + AppleScript-tab-URL approach is dropped to optional enrichment.

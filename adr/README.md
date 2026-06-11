@@ -16,5 +16,6 @@ recommendation. One-line mirrors live in [`../DECISIONS.md`](../DECISIONS.md); t
 | [ADR-008](ADR-008-claude-auto-trigger.md) | Claude auto-trigger & skill chaining | F |
 | [ADR-009](ADR-009-app-architecture-ipc.md) | App architecture, language split & IPC | Phase 3 |
 | [ADR-010](ADR-010-privacy-consent.md) | Privacy & consent posture | Phase 1/2 |
+| [ADR-011](ADR-011-recording-modes.md) | Recording modes: manual capture & in-person meetings | A (extends) |
 
 Status: all **Proposed** — awaiting Yuval's review.

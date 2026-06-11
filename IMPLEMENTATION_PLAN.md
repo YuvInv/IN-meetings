@@ -93,15 +93,25 @@ throwaway-ok, and has a clear pass/fail. **Order: P1 ∥ P2 first (independent),
 - **If it fails (e.g., nag does fire / per-process tap unreliable):** fall back to system-exclusive tap;
   document the nag in onboarding; reconsider SCK only as a last resort for the audio path.
 
-### P3 — Reliable Meet / browser-tab detection
-- **Build:** the multi-signal detector — running-app + mic-in-use + **AppleScript tab URL** (Safari/
-  Chrome) + calendar arming — with the debounce policy.
-- **Measure:** detection latency + false-positive/negative rate across Zoom (native), Meet (Chrome &
-  Safari), Teams, Slack huddle; confirm the **AirPods mic-in-use blind spot** is covered by other
-  signals; confirm Automation TCC (not Accessibility) suffices; note Firefox degradation.
-- **Pass:** arms within a couple seconds for all target platforms with no music/notification false fires.
+### P3 — Reliable call detection — ✅ DONE (verified live)
+- **Built & verified:** Core Audio per-process audio I/O — a process with **both input+output running**
+  = a live call, named by bundle ID (`prototypes/p3-detect`). App-agnostic, no Automation/Accessibility/
+  Screen-Recording permission, frontmost-independent, rejects one-way playback. (The original app+tab
+  approach was prototyped, failed, and dropped — see ADR-001.)
+- **Result:** YouTube → `armed=no`; Google Meet w/ mic → `armed=YES CALL in: Google Chrome`. Edge case
+  noted: mic-muted-from-start = output-only (latch + calendar mitigate).
 
-**Exit Phase 0** with a written go/no-go on each, folded into `DECISIONS.md`, before MVP.
+### P4 — In-person multi-speaker diarization (NEW — per-speaker from v1, ADR-011)
+- **Why:** in-person meetings put every participant on one mic track; "who said what" needs real
+  single-track diarization — a distinct, harder quality axis (like code-switching was for calls).
+- **Build:** record a real in-person meeting (manual, mic-only); run **senko** then **pyannote
+  community-1** on the mic track; map speakers to calendar attendees; measure Hebrew **DER**, overlap
+  handling, and accuracy vs room acoustics.
+- **Pass:** usable speaker separation + name mapping on a real Hebrew room meeting, with dashboard
+  manual fix as backstop. **If weak:** ship merged transcript + manual labeling, improve diarization.
+
+**Phase-0 status:** **P1 ✅ GO** (ASR), **P3 ✅ GO** (detection). **P2** (capture) compiles, runtime
+verification pending. **P4** (in-person diarization) to run. Go/no-go folded into `DECISIONS.md`.
 
 ---
 
@@ -110,7 +120,9 @@ throwaway-ok, and has a clear pass/fail. **Order: P1 ∥ P2 first (independent),
 ### Phase 1 — MVP (the brief's MVP: detect → banner → dual-track → local Hebrew → package on disk + Drive)
 Promote P2+P3 prototypes into the app; wire P1's pipeline.
 1. Menu-bar app shell (`LSUIElement`, launch-at-login), onboarding wizard for the 4 TCC grants.
-2. Detection + banner + **ring-buffer** capture (ADR-001) → dual-track WAV (ADR-002).
+2. **Start paths (ADR-001/011):** auto-detect prompt + **manual Start (menu bar + hotkey)** with
+   **profile auto-pick**; banner + **ring-buffer**; **dual-track** capture for calls, **mic-only** for
+   in-person (ADR-002).
 3. Pipeline job bridge (file queue + status — ADR-009); resumable phases.
 4. Local Hebrew transcription (ivrit turbo, **biasing deferred to Phase 2** — MVP can ship unbiased) +
    senko diarization + Me/Them merge → `transcript.json`/`.txt`.

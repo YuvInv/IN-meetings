@@ -53,11 +53,15 @@ spellings the Claude skills want). `initial_prompt` is demoted to an optional li
 **must not contain Latin proper nouns**. Next: add a fuzzy/edit-distance pass for unseen variants
 (guard short tokens). The CI check becomes a post-correction fixture test, not a prompt-following test.
 
-**Diarization:** run **senko** (MIT, ~7.7 s/hour on M3 via ANE) **on the system-audio track only** —
-the mic track is the known IN partner and needs no diarization (the 2-track trick). Map diarized
-system-track speakers to names using the calendar attendee list (ADR-004); unmatched speakers stay
-`Speaker A/B`. Validate Hebrew DER first; **pyannote community-1** (CC-BY-4.0, ungated ivrit mirror) is
-the quality fallback.
+**Diarization — two cases (see ADR-011):**
+- **Call (dual-track):** run **senko** (MIT, ~7.7 s/hour on M3 via ANE) **on the system-audio track
+  only** — the mic track is the known IN partner (the 2-track trick). Map system-track speakers to
+  names via the calendar attendee list (ADR-004); unmatched stay `Speaker A/B`.
+- **In-person (mic-only):** every participant is on the single mic track → run full **multi-speaker
+  diarization on the mic track** (senko; pyannote community-1 fallback), map to calendar attendees, and
+  let the user fix/rename in the dashboard (ADR-007). This is **per-speaker from v1** (Yuval) and a
+  harder quality axis — **its own de-risk prototype** (IMPLEMENTATION_PLAN), with Hebrew DER + overlap
+  + room-acoustics to validate. Validate Hebrew DER before trusting either path.
 
 **Outputs (both):**
 - `transcript.json` — `{ language, engine, model_revision, biased: bool, utterances: [{text, start,

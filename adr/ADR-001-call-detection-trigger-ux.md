@@ -65,6 +65,12 @@ match a calendar event" is available but **off by default**.
 **Menu-bar agent:** `LSUIElement = true` (no Dock icon), launch-at-login via `SMAppService`. The
 menu-bar item is the home for status, the dashboard, recent meetings, and settings.
 
+**Manual start (ADR-011):** a menu-bar **"Start Recording"** item + a **global hotkey** start recording
+on demand — the fallback when auto-detection misses, and the primary path for **in-person** meetings
+(which are manual-only, no calendar auto-prompt). Manual start **auto-picks the capture profile** using
+the detector above: live bidirectional-audio process → call profile (mic + system); otherwise →
+in-person mic-only profile. See ADR-011 for modes, profiles, and in-person diarization.
+
 ## Options considered
 
 | Option | Why not |

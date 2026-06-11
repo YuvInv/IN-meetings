@@ -79,13 +79,14 @@ communicate over a local job protocol — see [ADR-009](adr/ADR-009-app-architec
 | [008](adr/ADR-008-claude-auto-trigger.md) | Claude auto-trigger | Headless `claude -p` chain, **configurable per meeting** (auto vs one-click), default one-click; meeting-type routing decides which skills run. |
 | [009](adr/ADR-009-app-architecture-ipc.md) | App architecture & IPC | Swift menu-bar app + bundled Python venv; **file-based job queue + JSON status** (simple, observable, crash-safe); onboarding wizard for the 4 TCC grants. |
 | [010](adr/ADR-010-privacy-consent.md) | Privacy & consent | On-device default; nothing leaves the Mac except to the team Drive (and opt-in cloud/Claude); consent metadata + jurisdiction nudge + retention controls; do-not-record defaults for internal events. |
+| [011](adr/ADR-011-recording-modes.md) | Recording modes | **Manual Start** (menu bar + hotkey) as fallback + primary path for **in-person** meetings; manual **auto-picks profile** (call→dual-track, else→mic-only); in-person = mic-only with **per-speaker diarization** on one track; in-person is manual-only (no calendar auto-prompt). |
 
 ## 5. The context package (the contract)
 
 ```
 /<Company>/<YYYY-MM-DD-meeting[-N]>/
-  audio_mic.wav            # user side (raw)
-  audio_system.wav         # remote participants (tap)
+  audio_mic.wav            # user side (raw); for in-person, the whole room
+  audio_system.wav         # remote participants (tap) — ABSENT for in-person meetings
   video.mov                # optional, HEVC, off by default
   transcript.json          # utterances {text,start,end,speaker_id,confidence}; speakers[]; language
   transcript.txt           # clean, speaker-named, readable
@@ -100,10 +101,12 @@ are in [ADR-005](adr/ADR-005-context-package-contract.md) and
 
 ## 6. End-to-end flow
 
-1. **Detect** — multi-signal; a meeting app goes active + mic-in-use (or calendar says now) → arm.
+1. **Start** — either **auto** (Core Audio detects a live call → "Record now?", ADR-001) or **manual**
+   (menu-bar button / hotkey — fallback for missed calls, and the path for in-person meetings; ADR-011).
+   Manual auto-picks the profile: live call → dual-track; otherwise → in-person mic-only.
 2. **Banner** — non-activating panel: "Recording <Company> — Stop / Pause / Don't record". Ring-buffer
    means the seconds before the user clicks are not lost.
-3. **Capture** — two tracks start immediately; optional video.
+3. **Capture** — call: two tracks (mic + system). In-person: mic only. Optional video.
 4. **Context assembly (parallel with capture)** — match to a calendar event; pull Saventa + Dealigence;
    build biasing vocab + `context.md`. Degrade gracefully if unmatched.
 5. **Meeting end** — mic idle past debounce → stop → package the raw folder.
