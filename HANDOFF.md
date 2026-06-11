@@ -9,47 +9,48 @@ Keep it short: last state, next steps, gotchas. History lives in git log.
 Claude Code · 2026-06-11
 
 ## Current State
-**Design approved and Phase-0 de-risk prototypes DONE & verified live.** Work is on branch
-`phase0-prototypes` (published to `github.com/YuvInv/IN-meetings`, private). `main` holds the design
-baseline; `phase0-prototypes` is the active branch (ahead by the prototype + ADR-update commits).
+**MVP Phase 1 in progress.** Branch **`feat/mvp-app-skeleton`** (off `main`; `main` == `phase0-prototypes`,
+prototypes merged). Phase-0 prototypes (P1 ASR, P2 capture, P3 detection) all verified; **P4 in-person
+diarization still pending.** The Swift menu-bar app now exists under `Apps/INMeetings` + core lib
+`Sources/INMeetingsCore` (XcodeGen + root `Makefile`; `make verify-mac`). **Slices 1–3 done, verified live, committed:**
 
-- **Design complete:** `RESEARCH.md`, `DESIGN.md`, `adr/ADR-001..011`, `IMPLEMENTATION_PLAN.md`,
-  `docs/notes/skill-contracts.md`. Every brief item resolved; load-bearing claims verified.
-- **P1 — Hebrew ASR ✅ verified.** On-device fast (RTF ≈ 0.12 full / 0.10 short on M4), strong Hebrew.
-  `initial_prompt` biasing FAILED → **deterministic post-correction** is the mechanism. `pipeline/benchmarks/`.
-- **P2 — dual-track capture ✅ verified.** Core Audio tap + AVAudioEngine mic, two clean separate tracks,
-  **only System Audio Recording permission** (no Screen Recording). `prototypes/p2-capture`.
-- **P3 — call detection ✅ verified.** Core Audio per-process bidirectional audio I/O (input+output =
-  call), app-agnostic, no special permission. `prototypes/p3-detect`.
-- **P4 — in-person multi-speaker diarization ⏳ NOT done.** Needs a real in-person Hebrew recording.
+- **Slice 1 ✅** menu-bar shell (`LSUIElement` `MenuBarExtra`), signed **Apple Development** (team A6C6D257QN),
+  bundle `com.in-venture.in-meetings`. Launches in the menu bar (`f45df9d`).
+- **Slice 2 ✅** P3 detection wired into the menu (idle/armed) + manual **Start/Stop** (menu + global **⌃⌥⌘R**
+  via Carbon, no Accessibility) + **profile auto-pick** (call→dual-track, else→in-person) + live menu-bar
+  timer (`b2d3fb3`, `2bde2fa`).
+- **Slice 3 ✅** dual-track capture (`SystemAudioTap` + `MicRecorder` + `CaptureSession`) → per-meeting folder
+  under Application Support; mic-permission request + Info.plist usage strings; post-recording self-diagnostic
+  `Last: mic X dB · sys Y dB`. Verified live on a Google Meet call: **mic −15 dB / system −4 dB** (`3faa336`).
 
-## Next Session — START HERE: build the MVP app skeleton (IMPLEMENTATION_PLAN Phase 1, steps 1–3)
-1. **Menu-bar app** (`LSUIElement`, launch-at-login via `SMAppService`) + onboarding TCC flow.
-   **Developer-ID sign it** so System Audio Recording attaches to the app (headless binaries get silence).
-   Use XcodeGen (like `~/repos/remote-camera`). Verify the shell launches in the menu bar before wiring.
-2. **Wire P3 detection + manual Start** (menu-bar item + global hotkey) with **profile auto-pick**
-   (live call → dual-track; else → in-person mic-only).
-3. **Wire P2 capture** — reuse the verified pattern. Then: pipeline bridge → Hebrew transcription +
-   post-correction → context package on disk → Drive. Verify each slice on a real meeting (don't batch).
+## Next — START HERE: slice 4 (pipeline bridge → Hebrew transcription)
+4. **Job bridge** (file queue + JSON status IPC, ADR-009) from the app to a **Python pipeline**; on Stop,
+   enqueue the recording. Pipeline: **ivrit-ai turbo GGML on whisper.cpp Metal** (biasing deferred to Phase 2 —
+   ship unbiased) + **deterministic post-correction** (P1 finding) + **senko** diarization on the system track +
+   Me/Them merge → `transcript.json`/`.txt`. Verify on a real recording (eyeball Hebrew).
+5. Context **package** on disk (ADR-005 schema; `schema/` is currently empty) + SQLite index (GRDB).
+6. **Drive sync** (per-user OAuth, company-first layout, ADR-006). Verify each slice on a real meeting — don't batch.
 
-## Gotchas the MVP MUST respect (learned + verified this session)
-- **Tap write:** the tap is **interleaved float32** — create the `AVAudioFile` with the tap's exact
-  processing format (`commonFormat` + `interleaved:true`) or `write(from:)` fails −50 (silent file).
-- **TCC responsible process:** sign the app; an unsigned/headless binary gets digital silence from the tap.
-- **Detection = bidirectional audio process**, NOT app/tab heuristics (that approach failed live).
-- **ASR biasing = post-correction** (canonical entity + variant spellings), NOT `initial_prompt`.
-- (See memory files: `call-detection-mechanism`, `coreaudio-tap-gotchas`.)
+## Gotchas the MVP MUST respect (verified)
+- **TCC grant needs a relaunch:** mic + System Audio Recording grants take effect only on an app launch
+  *after* granting — first recordings are **−91 dB silence on BOTH tracks** until relaunch. Onboarding must
+  force/guide a relaunch. The in-app `Last: mic/sys dB` readout is the capture-health check. (memory: `coreaudio-tap-gotchas` #3.)
+- **Signing:** **Apple Development is sufficient for local-dev capture** (avoids the digital-silence gotcha);
+  Developer-ID + notarization is a **Phase-5** rollout concern, NOT needed now. (Corrects the old handoff.)
+- **Tap write:** interleaved float32 — pin the `AVAudioFile` to the tap format or `write(from:)` fails −50.
+- **Detection = bidirectional audio process**, not app/tab heuristics. **ASR biasing = post-correction**, not `initial_prompt`.
+- (memory: `call-detection-mechanism`, `coreaudio-tap-gotchas`.)
 
-## Open Questions (for Yuval)
-- Soniox opt-in cloud fallback acceptable, or strictly on-device?
-- Auto-trigger default: one-click vs auto for calendar-matched founder meetings?
-- Counsel review of ADR-010 (6 flagged items) — who/when?
-- Coordinate the `--package` input mode in `~/repos/claude-skills` (ADR-005) — separate repo.
+## Open Questions / follow-ups (for Yuval)
+- **Onboarding TCC wizard is minimal** (mic request + tap attempt + error/relaunch hint). A proper multi-step
+  wizard that *forces a relaunch after first grant* is a deferred polish item.
+- Soniox opt-in cloud fallback acceptable, or strictly on-device? Auto-trigger default (one-click vs auto)?
+- Counsel review of ADR-010 (6 flagged items). Coordinate the `--package` mode in `~/repos/claude-skills` (ADR-005).
 
 ## Context
-- Env: all Macs **macOS 26 / M3+/16GB**; Drive = **per-user OAuth** to a shared Team Drive.
-- Downstream skills (`generate-mom`/`process-meeting`/`saventa-summary`) call the **Timeless API
-  directly today — they don't read files**; the context package is a NEW contract (ADR-005).
-- Strategic moat (verified): no shipping competitor combines local + Hebrew + vocabulary biasing.
-- Security side-note (not this project): the desktop `timeless-access` skill embeds a live
-  `TIMELESS_ACCESS_TOKEN` in plaintext — rotate/remove independently.
+- Env: all Macs **macOS 26 / M3+/16GB**; Drive = **per-user OAuth** to a shared Team Drive. Toolchain note: a
+  fresh Xcode 26.5 needed `sudo xcodebuild -runFirstLaunch` before app builds worked.
+- Downstream skills (`generate-mom`/`process-meeting`/`saventa-summary`) call the **Timeless API directly today —
+  they don't read files**; the context package is a NEW contract (ADR-005).
+- Security side-note (not this project): the desktop `timeless-access` skill embeds a live `TIMELESS_ACCESS_TOKEN`
+  in plaintext — rotate/remove independently.
