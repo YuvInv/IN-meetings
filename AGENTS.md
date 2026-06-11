@@ -31,7 +31,12 @@ The incoming agent reads `HANDOFF.md` and `DECISIONS.md` before starting work.
 ## Build & Test
 - Prototypes (Swift, macOS): `cd prototypes/p3-detect && swift build` · `cd prototypes/p2-capture && swift build`
 - ASR benchmark (Python/whisper.cpp): see `pipeline/benchmarks/README.md` (`brew install whisper-cpp ffmpeg`)
-- App + Python pipeline build/test/lint: `(TBD — added when the MVP app skeleton lands)`
+- **App (Swift/macOS):** `swift build` (INMeetingsCore SPM package) · `make build-mac` / `make run-mac` /
+  `make test` (full app via XcodeGen + xcodebuild). The pipeline needs `whisper-cli` on PATH.
+- **Python pipeline:** runs in a **pinned 3.11 venv** (senko needs Python <3.14; system python is 3.14).
+  Setup `cd pipeline && uv sync --group dev`; test `.venv/bin/python -m pytest tests/`; lint
+  `uvx ruff check in_meetings_pipeline tests`. The app spawns `pipeline/.venv/bin/python` (override:
+  `IN_MEETINGS_PYTHON`).
 
 ## Project
 

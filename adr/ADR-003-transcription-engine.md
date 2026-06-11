@@ -54,6 +54,15 @@ spellings the Claude skills want). `initial_prompt` is demoted to an optional li
 (guard short tokens). The CI check becomes a post-correction fixture test, not a prompt-following test.
 
 **Diarization — two cases (see ADR-011):**
+
+> **4c UPDATE (senko validated on real Hebrew, M-series/macOS 26):** A senko-vs-pyannote bake-off on
+> `prelligence` (real founder meeting) settled the unvalidated-DER risk below: **senko matched Timeless
+> ground-truth speaker counts at both scales** (2 on a 6-min clip, 3 on the full 51-min) at RTF
+> ~0.001–0.004 — the English+Mandarin embedding model did not break Hebrew. **senko stays primary;
+> pyannote `community-1` is the fallback** but is HuggingFace-gated (per-user token + model-terms), so
+> it is *not* baked into onboarding. Implemented in `pipeline/in_meetings_pipeline/diarize.py`
+> (`diarize_track` + `assign_speakers` max-overlap attribution); profile-aware in `__main__`. senko needs
+> **Python <3.14** → the pipeline runs in a pinned 3.11 venv (DECISIONS 2026-06-11 slice 4c).
 - **Call (dual-track):** run **senko** (MIT, ~7.7 s/hour on M3 via ANE) **on the system-audio track
   only** — the mic track is the known IN partner (the 2-track trick). Map system-track speakers to
   names via the calendar attendee list (ADR-004); unmatched stay `Speaker A/B`.

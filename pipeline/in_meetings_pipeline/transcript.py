@@ -34,11 +34,20 @@ def merge(*tracks: list[Segment]) -> list[Segment]:
     return merged
 
 
-def to_json(meeting_id: str, profile: str, language: str, segments: list[Segment]) -> dict:
+def to_json(
+    meeting_id: str,
+    profile: str,
+    language: str,
+    segments: list[Segment],
+    speakers: list[dict] | None = None,
+    diarized: bool = False,
+) -> dict:
     return {
         "meeting_id": meeting_id,
         "profile": profile,
         "language": language,
+        "diarized": diarized,
+        "speakers": speakers or [],
         "segments": [asdict(s) for s in segments],
     }
 
