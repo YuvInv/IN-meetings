@@ -18,11 +18,14 @@ Claude Code
   Timeless on attribution). **Key finding: `initial_prompt` biasing does NOT work** (Latin terms
   regress proper nouns); **deterministic post-correction validated** as the replacement. ADR-003/004 +
   DECISIONS amended. Code+findings in `pipeline/benchmarks/` (data gitignored — confidential).
-- **P2 (capture) + P3 (detection) — BUILT, compile-checked, committed.** SwiftPM prototypes in
-  `prototypes/`. **Runtime verification pending Yuval** (TCC grants + live meeting) — checklists in
-  `prototypes/README.md`. P2 = Core Audio tap + AVAudioEngine → two WAVs (embedded Info.plist for
-  prompts); P3 = multi-signal detector (apps + mic-in-use + browser tab URL).
-  Run: `cd prototypes/p2-capture && swift run p2-capture 15` · `cd prototypes/p3-detect && swift run p3-detect`.
+- **P3 (detection) — DONE, VERIFIED LIVE.** Mechanism corrected (Yuval): **Core Audio per-process
+  audio I/O** — a process with both input+output running = a live call, named by bundle ID. No
+  Automation/Accessibility/Screen-Recording permission; app-agnostic; rejects playback. Verified on
+  M4/macOS 26 (YouTube→no; Meet w/ mic→`armed=YES Google Chrome`). The earlier app/tab approach failed
+  and was dropped. ADR-001 + DECISIONS revised. `prototypes/p3-detect`.
+- **P2 (capture) — BUILT, compile-checked. Runtime verification pending** (needs the System Audio
+  Recording grant + a call with remote audio). Same Core Audio tap family. `prototypes/p2-capture`;
+  run `swift run p2-capture 15` while audio plays + you talk; checklist in `prototypes/README.md`.
 
 ---
 _Prior state: Design phase complete — RESEARCH/DESIGN/ADRs/IMPLEMENTATION_PLAN committed (no app code)._
