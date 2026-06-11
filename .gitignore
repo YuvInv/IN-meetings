@@ -17,3 +17,9 @@ Apps/*/build/
 Apps/*/*.xcodeproj
 .swiftpm/
 *.xcuserstate
+
+# --- Python pipeline ---
+pipeline/.venv/
+__pycache__/
+*.pyc
+.ruff_cache/

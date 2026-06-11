@@ -66,6 +66,10 @@ private struct MenuContent: View {
             Text(diagnostic)
         }
 
+        if let phase = recorder.jobBridge.phase, !recorder.isRecording {
+            Text("Pipeline: \(phase)")
+        }
+
         if let error = recorder.lastError {
             Divider()
             Text("⚠️ \(error)")

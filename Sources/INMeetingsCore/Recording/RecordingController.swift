@@ -31,6 +31,9 @@ public final class RecordingController {
     private var tick: Timer?
     private var session: CaptureSession?
 
+    /// Runs the Python transcription pipeline for each finished recording (ADR-009).
+    public let jobBridge = JobBridge()
+
     /// - Parameters:
     ///   - detector: source of the call-vs-no-call signal for profile auto-pick.
     ///   - installHotKey: register the global ⌃⌥⌘R toggle (false in tests, to avoid side effects).
@@ -110,6 +113,7 @@ public final class RecordingController {
             if result.profile == .call && result.systemCapturedSilence {
                 lastError = "System-audio track was silent — make sure audio is playing, and that IN Meetings has 'System Audio Recording' in System Settings (a relaunch after granting may be needed)."
             }
+            jobBridge.enqueue(result)   // hand the recording to the transcription pipeline (ADR-009)
             RecordingsStore.reveal(result.directory)
         }
     }
