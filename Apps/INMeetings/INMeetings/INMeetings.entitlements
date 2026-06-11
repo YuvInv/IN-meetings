@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Sandbox OFF: required for Core Audio process taps and spawning the bundled Python pipeline (ADR-009). -->
+	<key>com.apple.security.app-sandbox</key>
+	<false/>
+	<!-- Audio capture + outbound network (Drive sync) are wired in later slices; declared up front so the
+	     signed identity is stable as TCC grants accumulate. -->
+	<key>com.apple.security.device.audio-input</key>
+	<true/>
+	<key>com.apple.security.network.client</key>
+	<true/>
+</dict>
+</plist>

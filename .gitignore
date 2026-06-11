@@ -8,3 +8,18 @@
 
 # macOS
 .DS_Store
+
+# --- Swift / Xcode build artifacts ---
+.build/
+DerivedData/
+Apps/*/build/
+# XcodeGen output — project.yml is the source of truth (`make gen` regenerates)
+Apps/*/*.xcodeproj
+.swiftpm/
+*.xcuserstate
+
+# --- Python pipeline ---
+pipeline/.venv/
+__pycache__/
+*.pyc
+.ruff_cache/

@@ -17,6 +17,14 @@ This file tracks significant architectural decisions made during development of 
 
 <!-- Decisions will be added here as development progresses. Newest last. -->
 
+### 2026-06-11 — MVP slice 2: global Start/Stop hotkey via Carbon (not Accessibility)
+- **Agent**: Claude Code (confirmed by Yuval)
+- **Decision**: The global Start/Stop hotkey (default ⌃⌥⌘R) uses Carbon `RegisterEventHotKey` — one registered chord, fires system-wide, routed to the app's event target. No dependency. `GlobalHotKey` in `INMeetingsCore/Input`.
+- **Rationale**: `RegisterEventHotKey` registers a single specific chord and cannot observe any other input, so it needs **no Accessibility permission**. The alternative — `NSEvent.addGlobalMonitorForEvents` — receives every keystroke and is gated behind Accessibility: the scariest onboarding prompt, an enlarged privacy surface (keystroke-observation capability) for a confidential founder/deal recorder, and re-grant fragility tied to the code signature. We lose nothing — a single global chord is exactly what `RegisterEventHotKey` is for. Permission-light is an ADR-011 requirement.
+- **Alternatives considered**: NSEvent global monitor + Accessibility (rejected — permission/privacy cost for a one-key feature); SwiftUI menu `.keyboardShortcut` (rejected — only fires when the app is frontmost, not global); SPM packages soffes/HotKey or sindresorhus/KeyboardShortcuts (deferred — both wrap the same Carbon API; a package buys a user-customizable recorder UI the MVP doesn't need, at the cost of a dependency — revisit if shortcut customization lands in settings).
+- **Consequences**: fixed default chord for now; user customization is a later settings feature (would likely adopt KeyboardShortcuts then).
+- **Also this slice (minor, no separate ADR)**: (a) the live recording timer lives in the **menu-bar status-item label** (model-driven 1s tick), not the dropdown — a `.menu`-style `MenuBarExtra` is a native `NSMenu` that won't tick a SwiftUI `Text(_, style:.timer)`; (b) the onboarding TCC wizard moved from slice 2 to **slice 3**, since the System Audio Recording + Microphone grants are only testable once capture exists; (c) local dev signs with **Apple Development** (sufficient to avoid the P2 TCC digital-silence gotcha) — **Developer ID + notarization deferred to Phase 5** rollout.
+
 ### 2026-06-11 — P2 prototype: dual-track capture VERIFIED (+ interleaved-write gotcha)
 - **Agent**: Claude Code
 - **Decision**: P2 (Core Audio process tap + AVAudioEngine mic → two WAVs) is verified live on M4/macOS 26.5 with **only the System Audio Recording permission** (no Screen Recording). Confirms ADR-002's capture architecture. MVP capture module to be built on this.
