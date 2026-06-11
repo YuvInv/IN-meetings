@@ -4,27 +4,38 @@ import INMeetingsCore
 
 /// IN-meetings menu-bar app entry point.
 ///
-/// Slice 1 is intentionally a bare shell: a `MenuBarExtra` (waveform icon) that proves the app
-/// builds, is signed, and launches as a menu-bar agent (`LSUIElement`, no Dock icon). Detection
-/// (Slice 2) and capture (Slice 3) get wired into the menu and the disabled action below.
+/// Slice 2 wires live call detection (prototype P3): a `CallDetector` polls Core Audio process I/O
+/// and the menu + icon reflect whether a call is in progress. Manual Start + global hotkey (slice 2b)
+/// and dual-track capture (slice 3) build on this. No TCC is needed for detection.
 @main
 struct INMeetingsApp: App {
+    @State private var detector = CallDetector()
+
     var body: some Scene {
-        MenuBarExtra("IN Meetings", systemImage: "waveform") {
-            MenuContent()
+        MenuBarExtra {
+            MenuContent(detector: detector)
+        } label: {
+            Image(systemName: detector.state.status == .armed ? "waveform.circle.fill" : "waveform")
         }
         .menuBarExtraStyle(.menu)
     }
 }
 
 private struct MenuContent: View {
+    var detector: CallDetector
+
     var body: some View {
-        Text("IN Meetings — idle")
+        switch detector.state.status {
+        case .armed:
+            Text("● Call detected — \(detector.state.callApps.joined(separator: ", "))")
+        case .idle:
+            Text("○ No call detected")
+        }
 
         Divider()
 
         Button("Start Recording") {
-            // Wired in Slice 2 (manual start + profile auto-pick).
+            // Wired in slice 2b (manual start + profile auto-pick).
         }
         .disabled(true)
 
