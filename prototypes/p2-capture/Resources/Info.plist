@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>p2-capture</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.inventure.inmeetings.p2-capture</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>IN-Meetings records your microphone as a separate track for meeting transcription.</string>
+    <key>NSAudioCaptureUsageDescription</key>
+    <string>IN-Meetings records the meeting's system audio (remote participants) as a separate track for transcription.</string>
+</dict>
+</plist>

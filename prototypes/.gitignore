@@ -1,0 +1,4 @@
+# Swift build artifacts
+.build/
+# Captured audio from P2 runs (may contain real audio — never commit)
+*.wav

@@ -13,7 +13,10 @@ pulled via the `timeless` skill. Reproduce with `run_benchmark.sh` / `compare_te
 | Audio | Wall time | Real-time factor |
 |------|-----------|------------------|
 | 6 min clip | 37 s | **~9.7× realtime (RTF ≈ 0.10)** |
-| 55 min full | _(see results/wcpp_full.log)_ | ~9–10× realtime expected (~5–6 min) |
+| 51 min full | 6.3 min | **8.2× realtime (RTF ≈ 0.12)** |
+
+(Full-length is slightly slower than the short clip — longer beam search / thermal — but still ~3×
+better than the ≤¼-realtime target. A 1-hour meeting transcribes in ~7 min on M4.)
 
 Metal GPU (MTLGPUFamilyMetal4), flash-attention on, model load ~1 s. The ≤¼-realtime target from
 ADR-003 is beaten by ~2.5×. **On-device default is confirmed viable** on the team's hardware floor.
