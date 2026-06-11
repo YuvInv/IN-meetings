@@ -37,6 +37,12 @@ final class SystemTap {
     private var procID: AudioDeviceIOProcID?
     private var file: AVAudioFile?
     private var format: AVAudioFormat?
+    // diagnostics
+    private var ioCalls = 0
+    private var nilBuffers = 0
+    private var framesWritten: Int64 = 0
+    private var lastWriteError: String?
+    private var peak: Float = 0   // max abs sample seen on the system track
 
     func start() {
         // 1. Global stereo tap excluding nothing (whole system mix). For per-process, pass PIDs->objectIDs.
@@ -57,6 +63,7 @@ final class SystemTap {
         check(AudioObjectGetPropertyData(tapID, &fmtAddr, 0, nil, &size, &asbd), "get tap format")
         guard let fmt = AVAudioFormat(streamDescription: &asbd) else { fail("bad tap format") }
         format = fmt
+        print("  tap format: \(fmt.sampleRate)Hz \(fmt.channelCount)ch interleaved=\(fmt.isInterleaved) common=\(fmt.commonFormat.rawValue)")
 
         // 3. Private aggregate device wrapping the tap.
         let aggUID = UUID().uuidString
@@ -75,16 +82,35 @@ final class SystemTap {
         check(AudioHardwareCreateAggregateDevice(aggDesc as CFDictionary, &aggregateID),
               "AudioHardwareCreateAggregateDevice")
 
-        file = try? AVAudioFile(forWriting: systemURL, settings: fmt.settings)
-        guard file != nil else { fail("cannot open \(systemURL.lastPathComponent)") }
+        // Pin the file's processing format to the tap's EXACT format (incl. interleaving) so
+        // write(from:) doesn't reject the tap buffers with -50 (the bug we hit with the default).
+        do {
+            file = try AVAudioFile(forWriting: systemURL,
+                                   settings: fmt.settings,
+                                   commonFormat: fmt.commonFormat,
+                                   interleaved: fmt.isInterleaved)
+        } catch { fail("cannot open \(systemURL.lastPathComponent): \(error)") }
 
         // 4. IOProc: wrap the tap's AudioBufferList and write it.
         let ioBlock: AudioDeviceIOBlock = { [weak self] _, inInputData, _, _, _ in
-            guard let self, let fmt = self.format,
+            guard let self else { return }
+            self.ioCalls += 1
+            guard let fmt = self.format,
                   let buf = AVAudioPCMBuffer(pcmFormat: fmt,
                                              bufferListNoCopy: inInputData,
-                                             deallocator: nil) else { return }
-            try? self.file?.write(from: buf)
+                                             deallocator: nil) else { self.nilBuffers += 1; return }
+            self.framesWritten += Int64(buf.frameLength)
+            // peak meter (interleaved float32) — distinguishes real audio from permission-denied silence
+            let abl = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: inInputData))
+            for b in abl {
+                if let data = b.mData {
+                    let n = Int(b.mDataByteSize) / MemoryLayout<Float>.size
+                    let p = data.assumingMemoryBound(to: Float.self)
+                    for i in 0..<n { let v = abs(p[i]); if v > self.peak { self.peak = v } }
+                }
+            }
+            do { try self.file?.write(from: buf) }
+            catch { if self.lastWriteError == nil { self.lastWriteError = "\(error)" } }
         }
         check(AudioDeviceCreateIOProcIDWithBlock(&procID, aggregateID, nil, ioBlock),
               "AudioDeviceCreateIOProcIDWithBlock")
@@ -97,7 +123,12 @@ final class SystemTap {
         if aggregateID != kAudioObjectUnknown { AudioHardwareDestroyAggregateDevice(aggregateID) }
         if tapID != kAudioObjectUnknown { AudioHardwareDestroyProcessTap(tapID) }
         file = nil
-        print("• system tap stopped")
+        let db = peak > 0 ? 20 * log10(peak) : -120
+        let verdict = peak < 0.0001
+            ? "⚠️  SILENT (peak \(String(format: "%.1f", db)) dB) — grant 'System Audio Recording' to this app/Terminal in System Settings ▸ Privacy & Security, then re-run."
+            : "✅ real audio captured (peak \(String(format: "%.1f", db)) dB)"
+        print("• system tap stopped — ioCalls=\(ioCalls) frames=\(framesWritten)\(lastWriteError != nil ? " writeError=\(lastWriteError!)" : "")")
+        print("• system track: \(verdict)")
     }
 }
 
