@@ -5,3 +5,6 @@
 .codex/
 .claude/settings.local.json
 # --- end dual-agent setup ---
+
+# macOS
+.DS_Store
