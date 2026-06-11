@@ -17,6 +17,13 @@ This file tracks significant architectural decisions made during development of 
 
 <!-- Decisions will be added here as development progresses. Newest last. -->
 
+### 2026-06-11 — P2 prototype: dual-track capture VERIFIED (+ interleaved-write gotcha)
+- **Agent**: Claude Code
+- **Decision**: P2 (Core Audio process tap + AVAudioEngine mic → two WAVs) is verified live on M4/macOS 26.5 with **only the System Audio Recording permission** (no Screen Recording). Confirms ADR-002's capture architecture. MVP capture module to be built on this.
+- **Rationale**: End-to-end proof — `✅ real audio (peak −2.7 dB)`; transcribing both tracks showed clean separation (mic = Hebrew test sentence, system = the English video, no cross-bleed). 1891 IOProc callbacks over 20s.
+- **Implementation gotcha (must respect in MVP)**: the tap delivers **interleaved float32**; `AVAudioFile(forWriting:settings:)` defaults to non-interleaved → `write(from:)` fails with OSStatus **−50** and the file is silent despite the tap working. Fix: create the file with the tap's exact processing format (`commonFormat` + `interleaved:true`). Also: System Audio Recording TCC attaches to the **responsible process** — an unsigned binary launched headlessly gets silence; the real (Developer-ID-signed) app avoids this.
+- **Consequences**: capture is de-risked. Remaining Phase-0 item: P4 (in-person diarization).
+
 ### 2026-06-11 — Recording modes: manual capture + in-person meetings (ADR-011)
 - **Agent**: Claude Code (requirements from Yuval)
 - **Decision**: Added **manual Start Recording** (menu-bar + global hotkey) and a first-class **in-person (mic-only) capture profile**. Manual start **auto-picks the profile** from the P3 audio-process detector (live call → dual-track; else → mic-only). In-person is **manual-trigger only** (no calendar auto-prompt) but gets **per-speaker diarization from v1**. New ADR-011; ADR-001/002/003/005 + DESIGN + IMPLEMENTATION_PLAN updated; `meeting_type` added to the package; new de-risk prototype **P4 (in-person diarization)**.

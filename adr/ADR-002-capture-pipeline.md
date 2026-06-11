@@ -69,6 +69,12 @@ enqueue the pipeline job (ADR-009). A hard cap (e.g., 4 h) guards runaway captur
 
 ## Consequences
 
+> **P2 VERIFIED (M4/macOS 26.5):** dual-track tap+mic capture works end-to-end with **only the System
+> Audio Recording permission** (no Screen Recording). Tracks are cleanly separate (mic = Hebrew voice,
+> system = the other party) — no cross-bleed. **Implementation gotcha for the MVP:** the tap delivers
+> **interleaved** float32; create the output `AVAudioFile` with the tap's exact processing format
+> (`commonFormat` + `interleaved:true`) or `write(from:)` fails with −50 and the file is silent.
+
 - **Good:** clean two-track audio with no driver; minimal permissions (no Screen Recording for the
   default audio path); per-process isolation improves both quality and confidentiality; offline AEC
   avoids the VPIO ducking trap.

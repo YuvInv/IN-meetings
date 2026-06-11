@@ -9,10 +9,17 @@ verification needs you at the machine (TCC permission grants + a live meeting), 
 
 ---
 
-## P2 — dual-track capture ([ADR-002](../adr/ADR-002-capture-pipeline.md))
+## P2 — dual-track capture ([ADR-002](../adr/ADR-002-capture-pipeline.md)) — ✅ VERIFIED
 
 Captures **two separate tracks** with no virtual driver: system/remote audio via a **Core Audio process
 tap**, mic via **AVAudioEngine**. Proves the no-Screen-Recording-permission capture path.
+
+**Verified live (M4 / macOS 26.5):** `✅ real audio captured (peak −2.7 dB)`; transcribing the two
+tracks proved clean separation — `mic.wav` → the Hebrew test sentence, `system.wav` → the English video
+(no cross-bleed). Only the **System Audio Recording** permission was needed (no Screen Recording).
+**Gotcha found & fixed:** the tap delivers **interleaved** float32; `AVAudioFile(forWriting:settings:)`
+defaults to non-interleaved and rejects every buffer with error −50 (silent file). Pin the file's
+processing format to the tap's (`commonFormat` + `interleaved`). The MVP capture module must do the same.
 
 ```bash
 cd prototypes/p2-capture

@@ -23,9 +23,11 @@ Claude Code
   Automation/Accessibility/Screen-Recording permission; app-agnostic; rejects playback. Verified on
   M4/macOS 26 (YouTube→no; Meet w/ mic→`armed=YES Google Chrome`). The earlier app/tab approach failed
   and was dropped. ADR-001 + DECISIONS revised. `prototypes/p3-detect`.
-- **P2 (capture) — BUILT, compile-checked. Runtime verification pending** (needs the System Audio
-  Recording grant + a call with remote audio). Same Core Audio tap family. `prototypes/p2-capture`;
-  run `swift run p2-capture 15` while audio plays + you talk; checklist in `prototypes/README.md`.
+- **P2 (capture) — DONE, VERIFIED LIVE.** Dual-track tap+mic capture works with **only System Audio
+  Recording permission** (no Screen Recording); tracks cleanly separate (mic=Hebrew voice, system=other
+  party — proven by transcribing both). **Gotcha fixed:** tap is interleaved float32 → pin the
+  AVAudioFile processing format (`commonFormat`+`interleaved`) or write fails −50 (silent). `prototypes/
+  p2-capture`. **MVP capture must reuse this exact pattern.**
 - **NEW requirement — ADR-011 recording modes (design done, not built):** manual Start (menu bar +
   hotkey) as fallback + primary path for **in-person** meetings; manual auto-picks profile (call→
   dual-track, else→mic-only); in-person = mic-only + **per-speaker diarization from v1** (manual-only
