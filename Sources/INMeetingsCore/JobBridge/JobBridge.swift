@@ -35,7 +35,9 @@ public final class JobBridge {
         if let env = ProcessInfo.processInfo.environment["IN_MEETINGS_PYTHON"] {
             return URL(fileURLWithPath: env)
         }
-        return URL(fileURLWithPath: "/opt/homebrew/bin/python3")
+        // The pipeline's pinned venv (Python 3.11 + senko, which requires <3.14 — system python3 is
+        // 3.14 and can't import it). Phase 5 bundles a sealed env; until then this is the dev venv.
+        return defaultPipelineDir.appendingPathComponent(".venv/bin/python")
     }
 
     /// Write the job file and start the pipeline for a finished recording.
@@ -77,6 +79,16 @@ public final class JobBridge {
         var env = ProcessInfo.processInfo.environment
         env["PATH"] = "/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
         process.environment = env
+
+        // Capture the pipeline's stdout+stderr into a per-meeting log — the durable trail for
+        // reviewing diarization/ASR on real meetings. The multi-party-call diarization quality check
+        // is deferred to live calls (DECISIONS 2026-06-11 slice 4c); this is what makes it reviewable.
+        let logURL = jobURL.deletingLastPathComponent().appendingPathComponent("pipeline.log")
+        FileManager.default.createFile(atPath: logURL.path, contents: nil)
+        if let logHandle = try? FileHandle(forWritingTo: logURL) {
+            process.standardOutput = logHandle
+            process.standardError = logHandle
+        }
         do {
             try process.run()
         } catch {

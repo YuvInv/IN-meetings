@@ -1,7 +1,12 @@
 """Entry point: `python -m in_meetings_pipeline run <job.json>`.
 
-Slice 4b: real Hebrew transcription (whisper.cpp ivrit-turbo) of each track + deterministic
-post-correction → transcript.json/.txt. Diarization (senko) + intra-track speaker split is 4c.
+Per-meeting worker: transcribe each track (whisper.cpp ivrit-turbo, slice 4b) → diarize + attribute
+speakers (senko, slice 4c) → deterministic post-correction → transcript.json/.txt.
+
+Speaker attribution is profile-aware (ADR-003/011):
+- call (dual-track): the mic is the known IN partner ("Me"); diarize the *system* track to split the
+  remote side ("Them" if one person, else "Speaker 1…N").
+- in-person (mic-only): everyone shares the mic → diarize it into "Speaker 1…N".
 """
 
 from __future__ import annotations
@@ -12,10 +17,11 @@ import sys
 from pathlib import Path
 
 from .asr import transcribe_track
+from .diarize import SpeakerTurn, diarize_track, label_track
 from .job import Job
 from .postcorrect import correct
 from .status import Status
-from .transcript import merge, segments_from_whisper, to_json, to_text
+from .transcript import Segment, merge, segments_from_whisper, to_json, to_text
 
 
 def load_vocab(directory: Path) -> list[dict]:
@@ -24,32 +30,93 @@ def load_vocab(directory: Path) -> list[dict]:
     return json.loads(p.read_text(encoding="utf-8")) if p.exists() else []
 
 
+def _safe_turns(wav: Path) -> list[SpeakerTurn]:
+    """Diarize a track, degrading to no turns on failure — diarization is an enhancement, not a gate."""
+    try:
+        return diarize_track(wav)
+    except Exception as exc:  # noqa: BLE001 — coarse labels beat failing the whole transcript
+        print(f"diarization skipped ({type(exc).__name__}: {exc})", file=sys.stderr)
+        return []
+
+
+def attribute_speakers(
+    job: Job, mic_segs: list[Segment], system_segs: list[Segment]
+) -> tuple[list[Segment], list[dict], bool]:
+    """Diarize the right track(s) for the profile and return (segments, speakers, diarized)."""
+    speakers: list[dict] = []
+    out: list[Segment] = []
+    diarized = False
+
+    if job.profile == "inPerson":
+        turns = _safe_turns(job.mic) if (job.mic and job.mic.exists()) else []
+        labeled, spk = label_track(mic_segs, turns, side="unknown", track="mic")
+        out += labeled
+        speakers += spk
+        diarized = bool(turns)
+    else:  # call
+        if mic_segs:
+            out += mic_segs
+            speakers.append({"id": "Me", "side": "internal", "track": "mic"})
+        if job.system and job.system.exists():
+            turns = _safe_turns(job.system)
+            labeled, spk = label_track(
+                system_segs, turns, side="external", track="system", solo_label="Them"
+            )
+            out += labeled
+            speakers += spk
+            diarized = bool(turns)
+        else:
+            out += system_segs
+
+    return merge(out), speakers, diarized
+
+
 def run(job_path: Path) -> int:
     job = Job.load(job_path)
     status = Status(job.directory, job.meeting_id)
     status.write("queued", 0.0)
     try:
         status.write("transcribing", 0.1)
-        tracks: list[list] = []
+        mic_segs: list[Segment] = []
+        system_segs: list[Segment] = []
         if job.mic and job.mic.exists():
+            base = "Speaker 1" if job.profile == "inPerson" else "Me"
             raw = transcribe_track(job.mic, job.directory / "mic.asr")
-            tracks.append(segments_from_whisper(raw, "Me"))
+            mic_segs = segments_from_whisper(raw, base)
         if job.system and job.system.exists():
             raw = transcribe_track(job.system, job.directory / "system.asr")
-            tracks.append(segments_from_whisper(raw, "Them"))
+            system_segs = segments_from_whisper(raw, "Them")
 
-        segments = merge(*tracks)
+        status.write("diarizing", 0.6)
+        segments, speakers, diarized = attribute_speakers(job, mic_segs, system_segs)
+
         vocab = load_vocab(job.directory)
         for seg in segments:
             seg.text, _ = correct(seg.text, vocab)
 
         (job.directory / "transcript.json").write_text(
-            json.dumps(to_json(job.meeting_id, job.profile, "he", segments), ensure_ascii=False, indent=2),
+            json.dumps(
+                to_json(job.meeting_id, job.profile, "he", segments, speakers, diarized),
+                ensure_ascii=False,
+                indent=2,
+            ),
             encoding="utf-8",
         )
         (job.directory / "transcript.txt").write_text(to_text(segments), encoding="utf-8")
         status.outputs["transcript"] = "transcript.json"
         status.outputs["transcript_txt"] = "transcript.txt"
+
+        # Diarization is MVP-accepted but unverified on a real multi-party *call* (DECISIONS 4c).
+        # Log a per-meeting summary so live calls leave a reviewable trail to judge it on later.
+        talk_s: dict[str, int] = {}
+        for s in segments:
+            talk_s[s.speaker] = talk_s.get(s.speaker, 0) + (s.end_ms - s.start_ms) // 1000
+        print(
+            f"diarization profile={job.profile} diarized={diarized} speakers={len(speakers)} "
+            f"talk_s={json.dumps(talk_s, ensure_ascii=False)}",
+            file=sys.stderr,
+        )
+
         status.write("done", 1.0)
         return 0
     except subprocess.CalledProcessError as exc:

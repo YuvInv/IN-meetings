@@ -2,8 +2,13 @@
 name = "in-meetings-pipeline"
 version = "0.1.0"
 description = "IN-meetings transcription / context / Drive pipeline — runs as a per-meeting job spawned by the Swift app (ADR-009)."
-requires-python = ">=3.11"
-dependencies = []
+requires-python = ">=3.11,<3.14"
+dependencies = [
+    "senko",  # speaker diarization (CoreML/ANE on Mac); slice 4c. Hebrew validated vs Timeless ground truth.
+]
+
+[dependency-groups]
+dev = ["pytest"]
 
 [tool.uv]
 package = false
