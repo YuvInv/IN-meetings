@@ -17,6 +17,14 @@ This file tracks significant architectural decisions made during development of 
 
 <!-- Decisions will be added here as development progresses. Newest last. -->
 
+### 2026-06-11 — P1 prototype: context injection is post-correction, not prompt biasing
+- **Agent**: Claude Code
+- **Decision**: Based on the P1 ASR benchmark on real founder-meeting audio (M4/macOS 26, whisper.cpp Metal + ivrit-ai turbo GGML), the context-injection mechanism is **deterministic entity post-correction**, not Whisper `initial_prompt` biasing. ADR-003 and ADR-004 amended accordingly. Evidence: `pipeline/benchmarks/P1-FINDINGS.md`.
+- **Rationale**: Measured — `initial_prompt` with Latin proper nouns *regressed* names the model otherwise got right (אלגוליון/Algolion → אלכוהוליון/"alcohol-ion", 6×); Hebrew-script terms were neutral; neither fixed the hardest term ("IN Venture"). The forced-Hebrew fine-tune won't emit Latin and its prompt-following is weak (matches the research's catastrophic-forgetting caveat). Post-correction (canonical entity + variant spellings → whole-token replace) was validated: deterministic, no regressions, and yields the canonical Latin spellings the Claude skills want.
+- **Alternatives considered**: Latin-script `initial_prompt` (regresses — rejected); Hebrew-script `initial_prompt` (neutral — kept only as an optional light primer, no Latin terms); model fine-tuning for code-switching (out of scope for now).
+- **Consequences**: ADR-004 emits a correction vocabulary (canonical + variants) rather than a ranked prompt word-list; the CI check becomes a post-correction fixture test; a fuzzy/edit-distance pass for unseen variants is the next refinement. On-device default is confirmed (speed + quality both pass).
+- **Also confirmed GO**: on-device Hebrew ASR is fast (RTF ≈ 0.10, ~10× realtime) and high quality on the team hardware floor; beats Timeless on speaker attribution (Timeless gave only generic Speaker 1/2/3).
+
 ### 2026-06-11 — Design-phase ADRs (ADR-001 … ADR-010)
 - **Agent**: Claude Code
 - **Decision**: Recorded the full design in `DESIGN.md` + `adr/`. One-line summaries (each links to its ADR):

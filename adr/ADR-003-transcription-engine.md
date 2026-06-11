@@ -1,7 +1,14 @@
 # ADR-003 — Transcription engine, biasing, diarization
 
-**Status:** Proposed · **Date:** 2026-06-11 · **Deciders:** Yuval (review)
-**Brief item:** D · **Research:** RESEARCH.md §3 (the crux)
+**Status:** Proposed (updated by P1 prototype) · **Date:** 2026-06-11 · **Deciders:** Yuval (review)
+**Brief item:** D · **Research:** RESEARCH.md §3 (the crux) · **Empirical:** `pipeline/benchmarks/P1-FINDINGS.md`
+
+> **P1 UPDATE (validated on real founder-meeting audio, M4/macOS 26):** On-device speed and Hebrew
+> quality are confirmed (RTF ≈ 0.10; strong baseline proper-noun rendering). **But `initial_prompt`
+> biasing does NOT work** — Latin-script terms *regress* names (Algolion → "alcohol-ion"), Hebrew-script
+> terms are neutral, and neither fixes the hardest term ("IN Venture"). **The context-injection mechanism
+> is therefore deterministic post-correction, not prompt biasing** (validated — see "Biasing" below as
+> amended and ADR-004). Engine/runtime/diarization decisions below are unchanged.
 
 ## Context
 
@@ -35,13 +42,16 @@ Apache-2.0. So on-device carries **no quality penalty**. Key constraints from re
   English (from calendar/locale heuristics, or a quick language probe) to **stock whisper-large-v3** —
   don't let the Hebrew fine-tune mangle an all-English call.
 
-**Context biasing (the strategic bet):** build the `initial_prompt` from the ADR-004 vocabulary —
-founder names, company name, product/domain terms, investor names — **highest-value terms placed last**
-(only ~224 tokens are honored). Treat mixed-script prompts (English names inside a Hebrew prompt) as
-**unvalidated** → measure it in Prototype 1. Pin the model revision and add a **prompt-following
-regression test** to CI so a future model bump can't silently break injection. If plain prompting
-proves too soft, the fallback is term-level post-correction (fuzzy-match ASR output against the known
-vocabulary) — cheap and deterministic.
+**Context biasing — AMENDED by P1.** The original plan (build `initial_prompt` from the ADR-004
+vocabulary, terms last) was tested in P1 and **does not work**: the forced-Hebrew fine-tune won't emit
+Latin, Latin-script prompt terms *regress* otherwise-correct names, and Hebrew-script terms don't help
+the hard cases. **Decision: deterministic post-correction is the primary mechanism.** Take the ADR-004
+vocabulary (each entity = canonical spelling + variant spellings, Hebrew + Latin) and whole-token
+replace against the ASR output (`pipeline/benchmarks/postcorrect.py` PoC: "נדוויינצ'ר" → "IN Venture",
+"פרליג'נס" → "Prelligence", etc. — deterministic, no regressions, and yields the canonical Latin
+spellings the Claude skills want). `initial_prompt` is demoted to an optional light domain primer and
+**must not contain Latin proper nouns**. Next: add a fuzzy/edit-distance pass for unseen variants
+(guard short tokens). The CI check becomes a post-correction fixture test, not a prompt-following test.
 
 **Diarization:** run **senko** (MIT, ~7.7 s/hour on M3 via ANE) **on the system-audio track only** —
 the mic track is the known IN partner and needs no diarization (the 2-track trick). Map diarized

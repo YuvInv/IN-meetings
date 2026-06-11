@@ -26,10 +26,13 @@ is ready by the time transcription starts.
    and in **Dealigence** (`search-company` / `search-person`) → founder backgrounds, prior companies,
    investors for the people on the call.
 3. **Emit two artifacts:**
-   - **Biasing vocabulary** (`vocab.json`, internal) — a **ranked** list: founder names (Hebrew +
-     Latin spellings), company name, product names, investor/fund names, domain jargon. Ranked so the
-     ASR layer can take the top-N that fit the 224-token `initial_prompt` (terms last). Include both
-     scripts for names where known (helps the code-switching case).
+   - **Correction vocabulary** (`vocab.json`, internal) — **per entity: a canonical spelling + a list
+     of variant spellings** (Hebrew + Latin), e.g. `{"canonical": "IN Venture", "variants":
+     ["נדוויינצ'ר", "אינוונצ'ר", ...]}`. **[Amended by P1]** This feeds **deterministic post-correction**
+     of the ASR output (ADR-003), NOT an `initial_prompt` — P1 proved prompt biasing fails (Latin terms
+     regress names). Sources for variants: CRM/Dealigence canonical names + a transliteration generator;
+     grow the observed-variant list from real misses. (An optional, short, Latin-free Hebrew domain
+     primer may still be passed as `initial_prompt`, but it is not the mechanism.)
    - **`context.md`** (in the package) — human/Claude-readable priors: who's on the call (names, roles,
      emails, side), the company one-liner + stage from Saventa, founder backgrounds from Dealigence,
      links to prior meeting summaries. **Clearly marked as PRIORS, not as meeting content** — the
