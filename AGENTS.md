@@ -29,10 +29,9 @@ The incoming agent reads `HANDOFF.md` and `DECISIONS.md` before starting work.
 - Focused, atomic commits — one logical change per commit
 
 ## Build & Test
-- Install: `(none yet — design phase)`
-- Test: `(none yet — design phase)`
-- Lint: `(none yet — design phase)`
-- Build: `(none yet — design phase)`
+- Prototypes (Swift, macOS): `cd prototypes/p3-detect && swift build` · `cd prototypes/p2-capture && swift build`
+- ASR benchmark (Python/whisper.cpp): see `pipeline/benchmarks/README.md` (`brew install whisper-cpp ffmpeg`)
+- App + Python pipeline build/test/lint: `(TBD — added when the MVP app skeleton lands)`
 
 ## Project
 
@@ -47,7 +46,11 @@ Hard constraints (from the design brief, non-negotiable):
 
 ## Current Phase
 
-**Design.** Deliverables: `RESEARCH.md`, `DESIGN.md` + `adr/`, `IMPLEMENTATION_PLAN.md`. **No application code until the design is reviewed and approved by Yuval.** Expected stack after approval: Swift/SwiftUI menu-bar app + Python transcription/context/Drive pipeline.
+**Phase-0 de-risk prototypes done (P1 ASR, P2 capture, P3 detection — all verified live); MVP next.**
+Design (`RESEARCH.md`, `DESIGN.md` + `adr/ADR-001..011`, `IMPLEMENTATION_PLAN.md`) is approved.
+Active branch: `phase0-prototypes`. **Read `HANDOFF.md` + `DECISIONS.md` before starting.** P4
+(in-person diarization) still pending. Stack: Swift/SwiftUI menu-bar app + Python transcription/
+context/Drive pipeline.
 
 ## Architecture
 - Document significant decisions in `DECISIONS.md`; design-phase decisions live in `adr/` and are mirrored as one-liners in `DECISIONS.md`

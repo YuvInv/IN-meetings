@@ -1,81 +1,55 @@
 # Agent Handoff — IN-meetings
 
 <!--
-This file is rewritten at every handoff. The incoming agent reads it before starting work.
-Keep it short: last state, next steps, gotchas. Do not append a history here — that's what git log is for.
+Rewritten at every handoff. The incoming agent reads this + DECISIONS.md before starting.
+Keep it short: last state, next steps, gotchas. History lives in git log.
 -->
 
 ## Outgoing Agent
-Claude Code
-
-## Date
-2026-06-11
+Claude Code · 2026-06-11
 
 ## Current State
-**Design approved ("let's go"). Phase 0 prototyping underway on branch `phase0-prototypes`.**
-- **P1 (Hebrew ASR) — DONE, GO.** On real founder-meeting audio (M4/macOS 26, whisper.cpp Metal +
-  ivrit turbo GGML): on-device fast (RTF ≈ 0.10, ~10× realtime) and Hebrew quality strong (beats
-  Timeless on attribution). **Key finding: `initial_prompt` biasing does NOT work** (Latin terms
-  regress proper nouns); **deterministic post-correction validated** as the replacement. ADR-003/004 +
-  DECISIONS amended. Code+findings in `pipeline/benchmarks/` (data gitignored — confidential).
-- **P3 (detection) — DONE, VERIFIED LIVE.** Mechanism corrected (Yuval): **Core Audio per-process
-  audio I/O** — a process with both input+output running = a live call, named by bundle ID. No
-  Automation/Accessibility/Screen-Recording permission; app-agnostic; rejects playback. Verified on
-  M4/macOS 26 (YouTube→no; Meet w/ mic→`armed=YES Google Chrome`). The earlier app/tab approach failed
-  and was dropped. ADR-001 + DECISIONS revised. `prototypes/p3-detect`.
-- **P2 (capture) — DONE, VERIFIED LIVE.** Dual-track tap+mic capture works with **only System Audio
-  Recording permission** (no Screen Recording); tracks cleanly separate (mic=Hebrew voice, system=other
-  party — proven by transcribing both). **Gotcha fixed:** tap is interleaved float32 → pin the
-  AVAudioFile processing format (`commonFormat`+`interleaved`) or write fails −50 (silent). `prototypes/
-  p2-capture`. **MVP capture must reuse this exact pattern.**
-- **NEW requirement — ADR-011 recording modes (design done, not built):** manual Start (menu bar +
-  hotkey) as fallback + primary path for **in-person** meetings; manual auto-picks profile (call→
-  dual-track, else→mic-only); in-person = mic-only + **per-speaker diarization from v1** (manual-only
-  trigger). New de-risk prototype **P4 (in-person multi-speaker diarization)** — needs a real in-person
-  Hebrew meeting recording. ADR-001/002/003/005 + DESIGN + IMPLEMENTATION_PLAN updated.
+**Design approved and Phase-0 de-risk prototypes DONE & verified live.** Work is on branch
+`phase0-prototypes` (published to `github.com/YuvInv/IN-meetings`, private). `main` holds the design
+baseline; `phase0-prototypes` is the active branch (ahead by the prototype + ADR-update commits).
 
----
-_Prior state: Design phase complete — RESEARCH/DESIGN/ADRs/IMPLEMENTATION_PLAN committed (no app code)._
-All Phase-1/2/3 deliverables from the brief are committed:
-- `RESEARCH.md` (+ `docs/notes/research-raw/`) — landscape, ranked Hebrew ASR (ivrit.ai turbo, Apache-2.0,
-  leaderboard-verified), macOS capture APIs, consent/legal, not-in-brief features/risks. Load-bearing
-  claims verified against primary sources.
-- `DESIGN.md` + `adr/ADR-001..010` — every brief item A–F resolved with one recommendation each.
-- `IMPLEMENTATION_PLAN.md` — repo structure, MVP-first phases, 3 de-risk prototypes.
-- `docs/notes/skill-contracts.md` — the real input contracts of the downstream Claude skills.
+- **Design complete:** `RESEARCH.md`, `DESIGN.md`, `adr/ADR-001..011`, `IMPLEMENTATION_PLAN.md`,
+  `docs/notes/skill-contracts.md`. Every brief item resolved; load-bearing claims verified.
+- **P1 — Hebrew ASR ✅ verified.** On-device fast (RTF ≈ 0.12 full / 0.10 short on M4), strong Hebrew.
+  `initial_prompt` biasing FAILED → **deterministic post-correction** is the mechanism. `pipeline/benchmarks/`.
+- **P2 — dual-track capture ✅ verified.** Core Audio tap + AVAudioEngine mic, two clean separate tracks,
+  **only System Audio Recording permission** (no Screen Recording). `prototypes/p2-capture`.
+- **P3 — call detection ✅ verified.** Core Audio per-process bidirectional audio I/O (input+output =
+  call), app-agnostic, no special permission. `prototypes/p3-detect`.
+- **P4 — in-person multi-speaker diarization ⏳ NOT done.** Needs a real in-person Hebrew recording.
 
-## Files Changed
-- `RESEARCH.md`, `DESIGN.md`, `IMPLEMENTATION_PLAN.md` — created
-- `adr/ADR-001..010*.md` + `adr/README.md` — created
-- `DECISIONS.md` — ADR one-liners appended
-- `docs/notes/skill-contracts.md`, `docs/notes/research-raw/*` — created
-- `AGENTS.md` — project section filled in (design phase)
+## Next Session — START HERE: build the MVP app skeleton (IMPLEMENTATION_PLAN Phase 1, steps 1–3)
+1. **Menu-bar app** (`LSUIElement`, launch-at-login via `SMAppService`) + onboarding TCC flow.
+   **Developer-ID sign it** so System Audio Recording attaches to the app (headless binaries get silence).
+   Use XcodeGen (like `~/repos/remote-camera`). Verify the shell launches in the menu bar before wiring.
+2. **Wire P3 detection + manual Start** (menu-bar item + global hotkey) with **profile auto-pick**
+   (live call → dual-track; else → in-person mic-only).
+3. **Wire P2 capture** — reuse the verified pattern. Then: pipeline bridge → Hebrew transcription +
+   post-correction → context package on disk → Drive. Verify each slice on a real meeting (don't batch).
+
+## Gotchas the MVP MUST respect (learned + verified this session)
+- **Tap write:** the tap is **interleaved float32** — create the `AVAudioFile` with the tap's exact
+  processing format (`commonFormat` + `interleaved:true`) or `write(from:)` fails −50 (silent file).
+- **TCC responsible process:** sign the app; an unsigned/headless binary gets digital silence from the tap.
+- **Detection = bidirectional audio process**, NOT app/tab heuristics (that approach failed live).
+- **ASR biasing = post-correction** (canonical entity + variant spellings), NOT `initial_prompt`.
+- (See memory files: `call-detection-mechanism`, `coreaudio-tap-gotchas`.)
 
 ## Open Questions (for Yuval)
-- Approve the design as-is, or change any ADR before scaffolding?
-- Cloud ASR fallback (Soniox) — acceptable as an opt-in tier, or strictly on-device only?
-- Auto-trigger default: one-click (current recommendation) vs auto for calendar-matched founder meetings?
-- Counsel review of ADR-010 — who/when (6 items flagged)?
-
-## Remaining Tasks
-- [ ] Yuval reviews RESEARCH/DESIGN/ADRs/PLAN → approve or request changes
-- [ ] On approval: build **Phase 0 prototypes first** (P1 Hebrew/code-switch ASR; P2 taps+nag+fullscreen
-      banner on Tahoe; P3 Meet/browser detection) — go/no-go into DECISIONS.md
-- [ ] Then MVP (Phase 1 in IMPLEMENTATION_PLAN.md)
-- [ ] Coordinate the `--package` change in `~/repos/claude-skills` (ADR-005)
-
-## Known Issues
-- The research workflow hit a session limit mid-run; the **verification phase was completed manually in
-  the main thread** for the load-bearing capture/ASR claims (see RESEARCH.md "Verification Status").
-  Two claims are carried with explicit caveats to confirm during P2: (a) no monthly re-approval nag for
-  audio-tap-only apps on Tahoe; (b) GGML/MLX quantized WER vs the leaderboard's CT2 fp16 numbers.
-- Security side-note (not this project): the desktop `timeless-access` skill embeds a live
-  `TIMELESS_ACCESS_TOKEN` in plaintext — rotate/remove independently.
+- Soniox opt-in cloud fallback acceptable, or strictly on-device?
+- Auto-trigger default: one-click vs auto for calendar-matched founder meetings?
+- Counsel review of ADR-010 (6 flagged items) — who/when?
+- Coordinate the `--package` input mode in `~/repos/claude-skills` (ADR-005) — separate repo.
 
 ## Context
-- Confirmed by user: all Macs on **macOS 26 (Tahoe)**, weakest is **M3/16GB**, Drive auth = **per-user OAuth**.
-- Key non-obvious finding: the downstream skills (`generate-mom`/`process-meeting`/`saventa-summary`) call
-  the **Timeless API directly today** — they do NOT read files. The package is a NEW input contract → ADR-005
-  adds a `--package` mode. Don't assume the skills already accept a folder.
-- Strategic moat (verified): no shipping competitor combines local processing + Hebrew + vocabulary biasing.
-- Raw research artifacts also at `/tmp/in-meetings-research/` (ephemeral) and mirrored in `docs/notes/research-raw/`.
+- Env: all Macs **macOS 26 / M3+/16GB**; Drive = **per-user OAuth** to a shared Team Drive.
+- Downstream skills (`generate-mom`/`process-meeting`/`saventa-summary`) call the **Timeless API
+  directly today — they don't read files**; the context package is a NEW contract (ADR-005).
+- Strategic moat (verified): no shipping competitor combines local + Hebrew + vocabulary biasing.
+- Security side-note (not this project): the desktop `timeless-access` skill embeds a live
+  `TIMELESS_ACCESS_TOKEN` in plaintext — rotate/remove independently.
