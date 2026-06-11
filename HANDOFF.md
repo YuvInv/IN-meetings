@@ -12,7 +12,17 @@ Claude Code
 2026-06-11
 
 ## Current State
-**Design phase COMPLETE — awaiting Yuval's review. No application code written (by design).**
+**Design approved ("let's go"). Phase 0 prototyping underway on branch `phase0-prototypes`.**
+- **P1 (Hebrew ASR) — DONE, GO.** On real founder-meeting audio (M4/macOS 26, whisper.cpp Metal +
+  ivrit turbo GGML): on-device fast (RTF ≈ 0.10, ~10× realtime) and Hebrew quality strong (beats
+  Timeless on attribution). **Key finding: `initial_prompt` biasing does NOT work** (Latin terms
+  regress proper nouns); **deterministic post-correction validated** as the replacement. ADR-003/004 +
+  DECISIONS amended. Code+findings in `pipeline/benchmarks/` (data gitignored — confidential).
+- **P2 (capture) + P3 (detection) — NOT STARTED.** Both need interactive TCC grants (System Audio
+  Recording Only / Automation) + a live meeting to verify — i.e., Yuval at the machine.
+
+---
+_Prior state: Design phase complete — RESEARCH/DESIGN/ADRs/IMPLEMENTATION_PLAN committed (no app code)._
 All Phase-1/2/3 deliverables from the brief are committed:
 - `RESEARCH.md` (+ `docs/notes/research-raw/`) — landscape, ranked Hebrew ASR (ivrit.ai turbo, Apache-2.0,
   leaderboard-verified), macOS capture APIs, consent/legal, not-in-brief features/risks. Load-bearing
