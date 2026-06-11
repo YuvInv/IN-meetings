@@ -18,8 +18,11 @@ Claude Code
   Timeless on attribution). **Key finding: `initial_prompt` biasing does NOT work** (Latin terms
   regress proper nouns); **deterministic post-correction validated** as the replacement. ADR-003/004 +
   DECISIONS amended. Code+findings in `pipeline/benchmarks/` (data gitignored — confidential).
-- **P2 (capture) + P3 (detection) — NOT STARTED.** Both need interactive TCC grants (System Audio
-  Recording Only / Automation) + a live meeting to verify — i.e., Yuval at the machine.
+- **P2 (capture) + P3 (detection) — BUILT, compile-checked, committed.** SwiftPM prototypes in
+  `prototypes/`. **Runtime verification pending Yuval** (TCC grants + live meeting) — checklists in
+  `prototypes/README.md`. P2 = Core Audio tap + AVAudioEngine → two WAVs (embedded Info.plist for
+  prompts); P3 = multi-signal detector (apps + mic-in-use + browser tab URL).
+  Run: `cd prototypes/p2-capture && swift run p2-capture 15` · `cd prototypes/p3-detect && swift run p3-detect`.
 
 ---
 _Prior state: Design phase complete — RESEARCH/DESIGN/ADRs/IMPLEMENTATION_PLAN committed (no app code)._
