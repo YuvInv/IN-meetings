@@ -4,10 +4,10 @@ import INMeetingsCore
 
 /// IN-meetings menu-bar app entry point.
 ///
-/// Slice 2 wires live call detection (P3) plus the manual Start/Stop flow: a `CallDetector` polls
-/// Core Audio process I/O, and a `RecordingController` (toggled by the menu or the global ⌃⌥⌘R hotkey)
-/// auto-picks the capture profile. While recording, the menu-bar label shows a live running timer.
-/// Real audio capture (slice 3) plugs into the controller.
+/// Wires live call detection (P3) + the manual Start/Stop flow + dual-track capture (P2): a
+/// `CallDetector` polls Core Audio process I/O, and a `RecordingController` (toggled by the menu or
+/// the global ⌃⌥⌘R hotkey) auto-picks the profile and records. While recording, the menu-bar label
+/// shows a live running timer.
 @main
 struct INMeetingsApp: App {
     @State private var detector: CallDetector
@@ -23,8 +23,6 @@ struct INMeetingsApp: App {
         MenuBarExtra {
             MenuContent(detector: detector, recorder: recorder)
         } label: {
-            // Recording → live "🔴 m:ss" timer (the status item re-renders on each `elapsed` tick).
-            // Idle → waveform, filled when a call is detected.
             if recorder.isRecording {
                 Text("🔴 \(recorder.elapsedString)")
                     .monospacedDigit()
@@ -52,7 +50,7 @@ private struct MenuContent: View {
 
             Divider()
 
-            Button("Start Recording") { recorder.start() }
+            Button("Start Recording") { Task { await recorder.start() } }
             Text("→ will record: \(recorder.pendingProfile.label)")
 
         case let .recording(profile, _):
@@ -62,6 +60,20 @@ private struct MenuContent: View {
             Divider()
 
             Button("Stop Recording") { recorder.stop() }
+        }
+
+        if let diagnostic = recorder.lastDiagnostic, !recorder.isRecording {
+            Text(diagnostic)
+        }
+
+        if let error = recorder.lastError {
+            Divider()
+            Text("⚠️ \(error)")
+            Button("Open Privacy Settings…") { Permissions.openPrivacySettings() }
+        }
+
+        if let dir = recorder.lastRecordingDir, !recorder.isRecording {
+            Button("Reveal Last Recording") { RecordingsStore.reveal(dir) }
         }
 
         Divider()
