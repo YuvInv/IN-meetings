@@ -1,0 +1,40 @@
+name: INMeetings
+options:
+  bundleIdPrefix: com.in-venture
+  deploymentTarget:
+    macOS: "26.0"
+  createIntermediateGroups: true
+
+packages:
+  INMeetingsCore:
+    path: ../..
+
+schemes:
+  INMeetings-App:
+    build:
+      targets:
+        INMeetings: all
+    run:
+      config: Debug
+
+targets:
+  INMeetings:
+    type: application
+    supportedDestinations: [macOS]
+    sources:
+      - INMeetings
+    dependencies:
+      - package: INMeetingsCore
+    settings:
+      base:
+        PRODUCT_NAME: INMeetings
+        PRODUCT_BUNDLE_IDENTIFIER: com.in-venture.in-meetings
+        INFOPLIST_FILE: INMeetings/Info.plist
+        CODE_SIGN_ENTITLEMENTS: INMeetings/INMeetings.entitlements
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: A6C6D257QN
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        GENERATE_INFOPLIST_FILE: false
+        SWIFT_VERSION: "5.0"
+        LD_RUNPATH_SEARCH_PATHS: ["$(inherited)", "@executable_path/../Frameworks"]
