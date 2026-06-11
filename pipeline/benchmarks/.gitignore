@@ -1,0 +1,5 @@
+# Large model weights (download via run instructions)
+models/
+# Confidential meeting audio + transcripts — NEVER commit
+eval_audio/
+results/
