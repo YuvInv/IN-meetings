@@ -36,25 +36,27 @@ app will be Developer-ID signed — [ADR-009](../adr/ADR-009-app-architecture-ip
 
 ---
 
-## P3 — meeting detection ([ADR-001](../adr/ADR-001-call-detection-trigger-ux.md))
+## P3 — meeting detection ([ADR-001](../adr/ADR-001-call-detection-trigger-ux.md)) — ✅ VERIFIED
 
-Multi-signal detector: running/frontmost apps (NSWorkspace) + mic-in-use (CoreAudio) + active browser
-tab URL (AppleScript). Prints an `armed=YES/no` verdict every 2 s.
+**Mechanism (the one real call-recorders use):** enumerate Core Audio processes
+(`kAudioHardwarePropertyProcessObjectList`); a process with **both input AND output audio running** is
+a live call, and its `kAudioProcessPropertyBundleID` names the app. App-agnostic, frontmost-independent,
+**no Automation / Accessibility / Screen-Recording permission**, and it rejects one-way playback.
 
 ```bash
 cd prototypes/p3-detect
-swift run p3-detect            # Ctrl-C to stop
+swift run p3-detect            # prints armed=YES/no every 2s; Ctrl-C to stop
 ```
-First time a browser is frontmost, it prompts for **Automation** permission (to read the tab URL).
 
-**Verify:**
-- [ ] Open **Zoom** (native) → `armed=YES`, `meetingApps=[Zoom]`.
-- [ ] Open **Google Meet** in Chrome/Safari → `armed=YES`, `urlHit=true (meet.google.com)`.
-- [ ] Open **Teams** / **Slack huddle** → detected.
-- [ ] **AirPods test:** join a call on AirPods → confirm `mic=false` (the Apple bug) but `armed=YES`
-      still (because app/URL signals carry it). ⬅ proves multi-signal is necessary.
-- [ ] No false `armed=YES` from a music app or notification sound.
-- [ ] Automation permission (not Accessibility) is sufficient for tab URLs.
+**Verified live (M4 / macOS 26.5):**
+- ✅ YouTube playback → `armed=no` (Chrome output-only — correctly not a call).
+- ✅ Google Meet with mic on → `armed=YES  CALL in: Google Chrome` (bidirectional), even backgrounded.
+- ✅ Call ended → back to `armed=no`. No permission prompt at any point.
+
+Still worth a pass when convenient:
+- [ ] Confirm the same for **Zoom** (native), **Teams**, **Slack huddle**, **WhatsApp**.
+- [ ] **AirPods:** confirm detection still works (per-process input flag, unlike device-level mic-in-use).
+- [ ] Note the mic-muted-from-start edge case (output-only → looks like playback; latch + calendar mitigate).
 
 ---
 

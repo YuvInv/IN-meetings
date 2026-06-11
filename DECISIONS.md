@@ -17,6 +17,13 @@ This file tracks significant architectural decisions made during development of 
 
 <!-- Decisions will be added here as development progresses. Newest last. -->
 
+### 2026-06-11 — P3 prototype: call detection via Core Audio process I/O (not app/tab heuristics)
+- **Agent**: Claude Code (course-corrected by Yuval)
+- **Decision**: Meeting detection's primary signal is **Core Audio per-process audio I/O** — a process with **both input and output audio running** is a live call, identified by `kAudioProcessPropertyBundleID`. ADR-001 revised. The frontmost-app + AppleScript-tab-URL approach is dropped to optional enrichment.
+- **Rationale**: Verified live on M4/macOS 26 — the app/tab approach **failed** (missed a backgrounded Google Meet call; required Automation TCC). The audio-process approach is how real call-recorders work: app-agnostic (Zoom/Meet/WhatsApp/Teams uniformly), **no Automation/Accessibility/Screen-Recording permission**, frontmost-independent, and it rejects one-way playback. Test: YouTube → `armed=no`; Meet w/ mic → `armed=YES CALL in: Google Chrome`.
+- **Alternatives considered**: device-level mic-in-use (AirPods blind spot, no app id — rejected); frontmost-app + tab-URL (fragile, needs Automation, missed backgrounded calls — rejected as primary); browser extension (unnecessary given the audio signal).
+- **Consequences**: API is macOS 14.2+ (fine — floor is 26). Edge case: a call muted-from-start is output-only and looks like playback → mitigate with a "seen-bidirectional" latch + calendar context (minor follow-up). Detection needs no TCC; capture (ADR-002/P2) still needs the audio-recording grant.
+
 ### 2026-06-11 — P1 prototype: context injection is post-correction, not prompt biasing
 - **Agent**: Claude Code
 - **Decision**: Based on the P1 ASR benchmark on real founder-meeting audio (M4/macOS 26, whisper.cpp Metal + ivrit-ai turbo GGML), the context-injection mechanism is **deterministic entity post-correction**, not Whisper `initial_prompt` biasing. ADR-003 and ADR-004 amended accordingly. Evidence: `pipeline/benchmarks/P1-FINDINGS.md`.

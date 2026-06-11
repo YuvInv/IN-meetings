@@ -1,128 +1,133 @@
-// P3 — meeting detection prototype (ADR-001).
+// P3 — meeting detection via Core Audio process I/O (ADR-001).
 //
-// Validates the MULTI-SIGNAL detector: a meeting is "live" when a meeting app is
-// running/frontmost AND (mic is in use OR a meeting URL is the active browser tab).
-// Mic-in-use alone is unreliable (AirPods always report false — Apple bug), so we fuse signals.
+// The robust, app-agnostic mechanism real call-recorders use: ask Core Audio which processes are
+// doing audio I/O, and treat a process with BOTH input (mic) AND output (speaker) active as a live
+// CALL. Bidirectional audio distinguishes a call (Zoom / Chrome-Meet / WhatsApp / Teams / FaceTime)
+// from one-way playback (YouTube = output only) or dictation (voice memo = input only) — and the
+// process object carries its own bundle ID, so we learn WHICH app with no per-app special-casing,
+// no Accessibility, and no Automation permission.
 //
-// Signals:
-//   1. Frontmost + running apps        — NSWorkspace (no permission)
-//   2. Mic in use                      — CoreAudio kAudioDevicePropertyDeviceIsRunningSomewhere
-//                                        on the default input device (no permission; false for Bluetooth)
-//   3. Active browser tab URL          — AppleScript (Automation TCC; prompts on first use)
+// API (macOS 14.2+): kAudioHardwarePropertyProcessObjectList →
+//   per process: kAudioProcessPropertyBundleID, kAudioProcessPropertyIsRunningInput / …Output.
 //
 // Run:  swift run p3-detect        (polls every 2s; Ctrl-C to stop)
-// First run will prompt for Automation permission for Chrome/Safari when a browser is frontmost.
 
-import AppKit
 import CoreAudio
 import Foundation
 
-// MARK: - Known meeting apps & URL patterns
+// MARK: - Core Audio property helpers
 
-let meetingBundleIDs: Set<String> = [
-    "us.zoom.xos",                 // Zoom
-    "com.microsoft.teams2",        // Teams (new)
-    "com.microsoft.teams",         // Teams (classic)
-    "com.tinyspeck.slackmacgap",   // Slack (huddles)
-    "Cisco-Systems.Spark",         // Webex
-]
-let browserBundleIDs: Set<String> = [
-    "com.google.Chrome",
-    "com.apple.Safari",
-    "company.thebrowser.Browser",  // Arc
-    "com.brave.Browser",
-    "com.microsoft.edgemac",
-]
-let meetingURLNeedles = ["meet.google.com", "zoom.us/j/", "zoom.us/wc/", "teams.microsoft.com",
-                         "teams.live.com", "webex.com/meet", "whereby.com"]
+let systemObject = AudioObjectID(kAudioObjectSystemObject)
 
-// MARK: - Signal 1: apps
-
-func runningMeetingApps() -> [String] {
-    NSWorkspace.shared.runningApplications.compactMap { app in
-        guard let id = app.bundleIdentifier, meetingBundleIDs.contains(id) else { return nil }
-        return app.localizedName ?? id
-    }
-}
-
-func frontmostBundleID() -> String? {
-    NSWorkspace.shared.frontmostApplication?.bundleIdentifier
-}
-
-// MARK: - Signal 2: mic in use (CoreAudio)
-
-func defaultInputDeviceID() -> AudioObjectID? {
-    var deviceID = AudioObjectID(kAudioObjectUnknown)
-    var size = UInt32(MemoryLayout<AudioObjectID>.size)
+func processObjectList() -> [AudioObjectID] {
     var addr = AudioObjectPropertyAddress(
-        mSelector: kAudioHardwarePropertyDefaultInputDevice,
+        mSelector: kAudioHardwarePropertyProcessObjectList,
         mScope: kAudioObjectPropertyScopeGlobal,
         mElement: kAudioObjectPropertyElementMain)
-    let status = AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &addr, 0, nil, &size, &deviceID)
-    return status == noErr ? deviceID : nil
+    var size: UInt32 = 0
+    guard AudioObjectGetPropertyDataSize(systemObject, &addr, 0, nil, &size) == noErr else { return [] }
+    var ids = [AudioObjectID](repeating: AudioObjectID(kAudioObjectUnknown),
+                              count: Int(size) / MemoryLayout<AudioObjectID>.size)
+    guard AudioObjectGetPropertyData(systemObject, &addr, 0, nil, &size, &ids) == noErr else { return [] }
+    return ids
 }
 
-func micInUse() -> Bool {
-    guard let dev = defaultInputDeviceID() else { return false }
-    var inUse: UInt32 = 0
+func readUInt32(_ objID: AudioObjectID, _ selector: AudioObjectPropertySelector) -> UInt32 {
+    var addr = AudioObjectPropertyAddress(mSelector: selector,
+                                          mScope: kAudioObjectPropertyScopeGlobal,
+                                          mElement: kAudioObjectPropertyElementMain)
+    var val: UInt32 = 0
     var size = UInt32(MemoryLayout<UInt32>.size)
-    var addr = AudioObjectPropertyAddress(
-        mSelector: kAudioDevicePropertyDeviceIsRunningSomewhere,
-        mScope: kAudioObjectPropertyScopeGlobal,
-        mElement: kAudioObjectPropertyElementMain)
-    let status = AudioObjectGetPropertyData(dev, &addr, 0, nil, &size, &inUse)
-    return status == noErr && inUse != 0
+    AudioObjectGetPropertyData(objID, &addr, 0, nil, &size, &val)
+    return val
 }
 
-// MARK: - Signal 3: active browser tab URL (AppleScript / Automation TCC)
-
-func activeTabURL(forBundleID id: String) -> String? {
-    let script: String
-    switch id {
-    case "com.apple.Safari":
-        script = "tell application \"Safari\" to return URL of front document"
-    case "com.google.Chrome", "com.brave.Browser", "com.microsoft.edgemac", "company.thebrowser.Browser":
-        let appName = NSWorkspace.shared.frontmostApplication?.localizedName ?? "Google Chrome"
-        script = "tell application \"\(appName)\" to return URL of active tab of front window"
-    default:
-        return nil
+func readString(_ objID: AudioObjectID, _ selector: AudioObjectPropertySelector) -> String? {
+    var addr = AudioObjectPropertyAddress(mSelector: selector,
+                                          mScope: kAudioObjectPropertyScopeGlobal,
+                                          mElement: kAudioObjectPropertyElementMain)
+    var size: UInt32 = 0
+    guard AudioObjectGetPropertyDataSize(objID, &addr, 0, nil, &size) == noErr, size > 0 else { return nil }
+    var cfStr: CFString = "" as CFString
+    let err = withUnsafeMutablePointer(to: &cfStr) {
+        AudioObjectGetPropertyData(objID, &addr, 0, nil, &size, $0)
     }
-    var error: NSDictionary?
-    guard let s = NSAppleScript(source: script) else { return nil }
-    let result = s.executeAndReturnError(&error)
-    if let error { fputs("  (AppleScript error: \(error[NSAppleScript.errorMessage] ?? "?") — grant Automation permission)\n", stderr) ; return nil }
-    return result.stringValue
+    return err == noErr ? (cfStr as String) : nil
 }
 
-// MARK: - Fused verdict
+// MARK: - Per-process audio state
 
-func meetingURLActive() -> (Bool, String?) {
-    guard let front = frontmostBundleID(), browserBundleIDs.contains(front) else { return (false, nil) }
-    guard let url = activeTabURL(forBundleID: front) else { return (false, nil) }
-    let hit = meetingURLNeedles.first { url.contains($0) }
-    return (hit != nil, hit != nil ? url : nil)
+// Audio shows up under helper/child bundle IDs (e.g. com.google.Chrome.helper); normalize to the
+// real app and give the common meeting apps a friendly name for the context assembler.
+let friendlyNames: [String: String] = [
+    "com.google.Chrome": "Google Chrome (Meet/web call)",
+    "com.apple.Safari": "Safari (web call)",
+    "us.zoom.xos": "Zoom",
+    "com.microsoft.teams2": "Microsoft Teams",
+    "com.microsoft.teams": "Microsoft Teams",
+    "com.tinyspeck.slackmacgap": "Slack (huddle)",
+    "net.whatsapp.WhatsApp": "WhatsApp",
+    "com.apple.FaceTime": "FaceTime",
+]
+
+func normalizedApp(_ bundleID: String) -> String {
+    // strip Chromium/Electron helper suffixes: "com.google.Chrome.helper (Renderer)" → "com.google.Chrome"
+    var id = bundleID
+    for marker in [".helper", ".Helper"] {
+        if let r = id.range(of: marker) { id = String(id[..<r.lowerBound]); break }
+    }
+    return friendlyNames[id] ?? id
 }
 
+struct AudioProc {
+    let bundleID: String
+    let input: Bool   // capturing the mic
+    let output: Bool  // playing to a device
+    var bidirectional: Bool { input && output }   // → a live call
+    var app: String { normalizedApp(bundleID) }
+}
+
+@available(macOS 14.2, *)
+func audioProcesses() -> [AudioProc] {
+    processObjectList().compactMap { id in
+        let bundle = readString(id, kAudioProcessPropertyBundleID) ?? "(unknown)"
+        let inRun = readUInt32(id, kAudioProcessPropertyIsRunningInput) != 0
+        let outRun = readUInt32(id, kAudioProcessPropertyIsRunningOutput) != 0
+        guard inRun || outRun else { return nil }   // ignore idle processes
+        return AudioProc(bundleID: bundle, input: inRun, output: outRun)
+    }
+}
+
+// MARK: - Verdict
+
+@available(macOS 14.2, *)
 func evaluate() {
-    let apps = runningMeetingApps()
-    let front = frontmostBundleID() ?? "?"
-    let mic = micInUse()
-    let (urlHit, url) = meetingURLActive()
-
-    // Arming policy (ADR-001): (meeting app present AND (mic OR meeting URL)) OR meeting URL active.
-    let appPresent = !apps.isEmpty || browserBundleIDs.contains(front)
-    let armed = (appPresent && (mic || urlHit)) || urlHit
+    let procs = audioProcesses()
+    let calls = procs.filter(\.bidirectional)
+    let armed = !calls.isEmpty
 
     let ts = ISO8601DateFormatter().string(from: Date())
-    print("[\(ts)] armed=\(armed ? "YES" : "no ") | meetingApps=\(apps) front=\(front) mic=\(mic) urlHit=\(urlHit)\(url != nil ? " (\(url!))" : "")")
+    if armed {
+        let who = Set(calls.map(\.app)).sorted().joined(separator: ", ")
+        print("[\(ts)] armed=YES  CALL in: \(who)")
+    } else {
+        let active = procs.map { "\($0.app)[\($0.input ? "in" : "")\($0.output ? "out" : "")]" }
+        print("[\(ts)] armed=no   audio I/O: \(active.isEmpty ? "(none)" : active.joined(separator: " "))")
+    }
 }
 
 // MARK: - Loop
 
-print("P3 detector — polling every 2s. Ctrl-C to stop.")
-print("Signals: NSWorkspace apps · CoreAudio mic-in-use · AppleScript tab URL (Automation TCC).")
-print(String(repeating: "-", count: 80))
-while true {
-    evaluate()
-    Thread.sleep(forTimeInterval: 2.0)
+setvbuf(stdout, nil, _IOLBF, 0)
+if #available(macOS 14.2, *) {
+    print("P3 detector — Core Audio process I/O. A process with BOTH input+output = a live call.")
+    print("Polling every 2s. Ctrl-C to stop.")
+    print(String(repeating: "-", count: 80))
+    while true {
+        evaluate()
+        Thread.sleep(forTimeInterval: 2.0)
+    }
+} else {
+    fputs("requires macOS 14.2+\n", stderr)
+    exit(1)
 }
