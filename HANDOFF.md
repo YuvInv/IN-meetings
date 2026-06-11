@@ -26,6 +26,11 @@ Claude Code
 - **P2 (capture) — BUILT, compile-checked. Runtime verification pending** (needs the System Audio
   Recording grant + a call with remote audio). Same Core Audio tap family. `prototypes/p2-capture`;
   run `swift run p2-capture 15` while audio plays + you talk; checklist in `prototypes/README.md`.
+- **NEW requirement — ADR-011 recording modes (design done, not built):** manual Start (menu bar +
+  hotkey) as fallback + primary path for **in-person** meetings; manual auto-picks profile (call→
+  dual-track, else→mic-only); in-person = mic-only + **per-speaker diarization from v1** (manual-only
+  trigger). New de-risk prototype **P4 (in-person multi-speaker diarization)** — needs a real in-person
+  Hebrew meeting recording. ADR-001/002/003/005 + DESIGN + IMPLEMENTATION_PLAN updated.
 
 ---
 _Prior state: Design phase complete — RESEARCH/DESIGN/ADRs/IMPLEMENTATION_PLAN committed (no app code)._
