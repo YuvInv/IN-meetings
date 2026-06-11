@@ -6,27 +6,53 @@ Keep it short: last state, next steps, gotchas. Do not append a history here —
 -->
 
 ## Outgoing Agent
-Claude Code | Codex CLI
+Claude Code
 
 ## Date
-YYYY-MM-DD
+2026-06-11
 
 ## Current State
-- Summary of what was accomplished this session
+**Design phase COMPLETE — awaiting Yuval's review. No application code written (by design).**
+All Phase-1/2/3 deliverables from the brief are committed:
+- `RESEARCH.md` (+ `docs/notes/research-raw/`) — landscape, ranked Hebrew ASR (ivrit.ai turbo, Apache-2.0,
+  leaderboard-verified), macOS capture APIs, consent/legal, not-in-brief features/risks. Load-bearing
+  claims verified against primary sources.
+- `DESIGN.md` + `adr/ADR-001..010` — every brief item A–F resolved with one recommendation each.
+- `IMPLEMENTATION_PLAN.md` — repo structure, MVP-first phases, 3 de-risk prototypes.
+- `docs/notes/skill-contracts.md` — the real input contracts of the downstream Claude skills.
 
 ## Files Changed
-- path/to/file.ts — brief description of change
+- `RESEARCH.md`, `DESIGN.md`, `IMPLEMENTATION_PLAN.md` — created
+- `adr/ADR-001..010*.md` + `adr/README.md` — created
+- `DECISIONS.md` — ADR one-liners appended
+- `docs/notes/skill-contracts.md`, `docs/notes/research-raw/*` — created
+- `AGENTS.md` — project section filled in (design phase)
 
-## Open Questions
-- Unresolved decisions or ambiguities
+## Open Questions (for Yuval)
+- Approve the design as-is, or change any ADR before scaffolding?
+- Cloud ASR fallback (Soniox) — acceptable as an opt-in tier, or strictly on-device only?
+- Auto-trigger default: one-click (current recommendation) vs auto for calendar-matched founder meetings?
+- Counsel review of ADR-010 — who/when (6 items flagged)?
 
 ## Remaining Tasks
-- [ ] Task 1
-- [ ] Task 2
+- [ ] Yuval reviews RESEARCH/DESIGN/ADRs/PLAN → approve or request changes
+- [ ] On approval: build **Phase 0 prototypes first** (P1 Hebrew/code-switch ASR; P2 taps+nag+fullscreen
+      banner on Tahoe; P3 Meet/browser detection) — go/no-go into DECISIONS.md
+- [ ] Then MVP (Phase 1 in IMPLEMENTATION_PLAN.md)
+- [ ] Coordinate the `--package` change in `~/repos/claude-skills` (ADR-005)
 
 ## Known Issues
-- Bugs found but not fixed
+- The research workflow hit a session limit mid-run; the **verification phase was completed manually in
+  the main thread** for the load-bearing capture/ASR claims (see RESEARCH.md "Verification Status").
+  Two claims are carried with explicit caveats to confirm during P2: (a) no monthly re-approval nag for
+  audio-tap-only apps on Tahoe; (b) GGML/MLX quantized WER vs the leaderboard's CT2 fp16 numbers.
+- Security side-note (not this project): the desktop `timeless-access` skill embeds a live
+  `TIMELESS_ACCESS_TOKEN` in plaintext — rotate/remove independently.
 
 ## Context
-- Important context for the incoming agent
-- Failed approaches or dead ends already explored
+- Confirmed by user: all Macs on **macOS 26 (Tahoe)**, weakest is **M3/16GB**, Drive auth = **per-user OAuth**.
+- Key non-obvious finding: the downstream skills (`generate-mom`/`process-meeting`/`saventa-summary`) call
+  the **Timeless API directly today** — they do NOT read files. The package is a NEW input contract → ADR-005
+  adds a `--package` mode. Don't assume the skills already accept a folder.
+- Strategic moat (verified): no shipping competitor combines local processing + Hebrew + vocabulary biasing.
+- Raw research artifacts also at `/tmp/in-meetings-research/` (ephemeral) and mirrored in `docs/notes/research-raw/`.
