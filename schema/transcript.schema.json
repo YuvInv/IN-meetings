@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://in-venture.com/in-meetings/schema/transcript.schema.json",
+  "title": "IN-Meetings transcript.json",
+  "description": "Per-meeting merged transcript. The stable contract consumed by the Claude skill stack (saventa-summary, generate-mom, process-meeting) via their --package mode (ADR-005). Forward-compatible: consumers MUST ignore unknown fields; new fields are added additively and tracked by metadata.json.schema_version.",
+  "type": "object",
+  "required": ["language", "speakers", "utterances"],
+  "properties": {
+    "meeting_id": {
+      "type": "string",
+      "description": "Stable id, also the local folder name; matches metadata.json meeting id."
+    },
+    "profile": {
+      "enum": ["call", "inPerson"],
+      "description": "Capture profile (ADR-011). call = dual-track; inPerson = mic-only."
+    },
+    "language": {
+      "type": "string",
+      "description": "Primary language code, e.g. \"he\"."
+    },
+    "engine": {
+      "type": "string",
+      "description": "ASR engine, e.g. \"whisper.cpp\"."
+    },
+    "model_revision": {
+      "type": "string",
+      "description": "Pinned model identifier, e.g. \"ivrit-large-v3-turbo\"."
+    },
+    "biased": {
+      "type": "boolean",
+      "description": "Whether context-injection biasing was applied (Phase 2). false at MVP."
+    },
+    "diarized": {
+      "type": "boolean",
+      "description": "Whether diarization produced real speaker turns (slice 4c). false = coarse track-level labels only."
+    },
+    "speakers": {
+      "type": "array",
+      "description": "Speaker table. utterance.speaker_id references id.",
+      "items": {
+        "type": "object",
+        "required": ["id", "side"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Speaker label, e.g. \"Me\", \"Them\", \"Speaker 1\"."
+          },
+          "side": {
+            "enum": ["internal", "external", "unknown"],
+            "description": "internal = IN team (mic), external = counterparty (system); unknown for single-track in-person speakers."
+          },
+          "track": {
+            "enum": ["mic", "system"],
+            "description": "Source audio track. Additive vs the Timeless shape; skills may ignore."
+          },
+          "name": {
+            "type": ["string", "null"],
+            "description": "Resolved display name (Phase 2 calendar match). null until matched."
+          },
+          "email": {
+            "type": ["string", "null"],
+            "description": "Resolved email (Phase 2 calendar match). null until matched."
+          }
+        }
+      }
+    },
+    "utterances": {
+      "type": "array",
+      "description": "Time-ordered utterances across all tracks (ADR-005; equivalent to Timeless items[]).",
+      "items": {
+        "type": "object",
+        "required": ["text", "start", "end", "speaker_id"],
+        "properties": {
+          "text": { "type": "string" },
+          "start": {
+            "type": "number",
+            "description": "Start time in seconds from recording start."
+          },
+          "end": {
+            "type": "number",
+            "description": "End time in seconds from recording start."
+          },
+          "speaker_id": {
+            "type": "string",
+            "description": "References speakers[].id."
+          },
+          "confidence": {
+            "type": ["number", "null"],
+            "minimum": 0,
+            "maximum": 1,
+            "description": "ASR confidence 0..1; null until captured. Enables the number-sanity skill check (ADR-005)."
+          }
+        }
+      }
+    }
+  }
+}

@@ -12,12 +12,18 @@ import subprocess
 from pathlib import Path
 
 WHISPER_CLI = os.environ.get("IN_MEETINGS_WHISPER", "whisper-cli")
+ENGINE = "whisper.cpp"
 
 
 def resolve_model() -> Path:
     if env := os.environ.get("IN_MEETINGS_MODEL"):
         return Path(env)
     return Path(__file__).resolve().parent.parent / "benchmarks" / "models" / "ivrit-large-v3-turbo.ggml.bin"
+
+
+def model_revision(model: Path | None = None) -> str:
+    """A clean identifier for the active model, e.g. "ivrit-large-v3-turbo" (drops .ggml.bin)."""
+    return (model or resolve_model()).name.split(".")[0]
 
 
 def transcribe_track(wav: Path, out_base: Path, language: str = "he", model: Path | None = None) -> list[dict]:

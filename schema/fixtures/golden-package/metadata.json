@@ -1,0 +1,41 @@
+{
+  "schema_version": "1.0",
+  "meeting": {
+    "title": "Prelligence — Series A intro",
+    "start": "2026-05-12T14:30:00+03:00",
+    "end": "2026-05-12T15:05:00+03:00",
+    "type": "call",
+    "calendar_event_id": "abc123_20260512T143000Z"
+  },
+  "attendees": [
+    {"name": "Yuval Naor", "email": "yuval@in-venture.com", "side": "internal", "matched_crm_contact_id": null},
+    {"name": "Dana Cohen", "email": "dana@prelligence.ai", "side": "external", "matched_crm_contact_id": "contact_7781"}
+  ],
+  "company": {
+    "name": "Prelligence",
+    "sevanta_deal_id": "deal_4421",
+    "dealigence_id": "dlg_991",
+    "matched": true
+  },
+  "recording": {
+    "durations": {"mic": 2103.4, "system": 2101.8},
+    "tracks": ["mic", "system"],
+    "sample_rate": 48000,
+    "capture_source_app": "us.zoom.xos",
+    "video": false
+  },
+  "transcription": {
+    "engine": "whisper.cpp",
+    "model_revision": "ivrit-large-v3-turbo",
+    "language": "he",
+    "biased": true,
+    "vocabulary_terms_used": ["Prelligence", "IN Venture", "ARR"]
+  },
+  "context": {
+    "sources": {"calendar": "ok", "saventa": "ok", "dealigence": "ok"}
+  },
+  "consent": {
+    "status": "verbal",
+    "jurisdiction_hint": "IL"
+  }
+}

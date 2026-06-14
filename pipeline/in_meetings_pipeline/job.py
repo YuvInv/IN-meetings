@@ -14,6 +14,12 @@ class Job:
     profile: str  # "call" | "inPerson"
     mic: Path | None
     system: Path | None
+    # Record-time facts from the recorder (Swift); optional so older jobs still load (ADR-005).
+    started_at: str | None = None  # ISO-8601 wall-clock meeting start
+    ended_at: str | None = None  # ISO-8601 wall-clock meeting end
+    sample_rate: int | None = None
+    capture_source_app: str | None = None  # detected call app (ADR-001/P3); None for in-person
+    video: bool = False  # whether a video.mov was captured (V1)
 
     @classmethod
     def load(cls, path: Path) -> Job:
@@ -28,4 +34,9 @@ class Job:
             profile=data.get("profile", "call"),
             mic=mic,
             system=system,
+            started_at=data.get("started_at"),
+            ended_at=data.get("ended_at"),
+            sample_rate=data.get("sample_rate"),
+            capture_source_app=data.get("capture_source_app"),
+            video=bool(data.get("video", False)),
         )

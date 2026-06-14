@@ -1,0 +1,19 @@
+{
+  "meeting_id": "2026-05-12-1430",
+  "profile": "call",
+  "language": "he",
+  "engine": "whisper.cpp",
+  "model_revision": "ivrit-large-v3-turbo",
+  "biased": true,
+  "diarized": true,
+  "speakers": [
+    {"id": "Me", "side": "internal", "track": "mic", "name": "Yuval Naor", "email": "yuval@in-venture.com"},
+    {"id": "Them", "side": "external", "track": "system", "name": "Dana Cohen", "email": "dana@prelligence.ai"}
+  ],
+  "utterances": [
+    {"text": "היי דנה, תודה שהצטרפת. בוא נתחיל מהסבב הנוכחי.", "start": 0.0, "end": 4.2, "speaker_id": "Me", "confidence": 0.94},
+    {"text": "בשמחה. אנחנו מגייסים סבב A של עשרה מיליון דולר.", "start": 4.5, "end": 9.1, "speaker_id": "Them", "confidence": 0.91},
+    {"text": "מה ה-ARR הנוכחי שלכם?", "start": 9.3, "end": 11.0, "speaker_id": "Me", "confidence": 0.96},
+    {"text": "אנחנו ב-1.5 מיליון דולר ARR, צומחים 15 אחוז חודש בחודש.", "start": 11.2, "end": 16.4, "speaker_id": "Them", "confidence": 0.89}
+  ]
+}
