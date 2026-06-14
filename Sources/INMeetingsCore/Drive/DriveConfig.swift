@@ -12,6 +12,9 @@ public enum DriveConfig {
     public static let oauth = GoogleOAuth.Config(
         clientID: "1062382667236-p1ignhh12l0e9al7he5esph13s8lm1qf.apps.googleusercontent.com",
         redirectScheme: "com.googleusercontent.apps.1062382667236-p1ignhh12l0e9al7he5esph13s8lm1qf",
-        scopes: ["https://www.googleapis.com/auth/drive"]
+        scopes: [
+            "https://www.googleapis.com/auth/drive",
+            "https://www.googleapis.com/auth/calendar.events.readonly",
+        ]
     )
 }
