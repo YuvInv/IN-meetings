@@ -30,6 +30,8 @@ public final class RecordingController {
     private var hotKey: GlobalHotKey?
     private var tick: Timer?
     private var session: CaptureSession?
+    /// Bundle id of the call app detected when this recording started (call profile) → metadata.json.
+    private var recordingSourceApp: String?
 
     /// Runs the Python transcription pipeline for each finished recording (ADR-009).
     public let jobBridge = JobBridge()
@@ -69,6 +71,7 @@ public final class RecordingController {
         guard !isRecording else { return }
         lastError = nil
         let profile = pendingProfile
+        recordingSourceApp = profile == .call ? detector.state.callApps.first : nil
 
         guard await Permissions.requestMicrophone() else {
             lastError = "Microphone access is required. Enable IN Meetings in System Settings ▸ Privacy & Security ▸ Microphone."
@@ -97,6 +100,10 @@ public final class RecordingController {
 
     public func stop() {
         guard isRecording else { return }
+        let startedAt: Date = {
+            if case let .recording(_, since) = state { return since }
+            return Date()
+        }()
         tick?.invalidate()
         tick = nil
         let result = session?.stop()
@@ -113,7 +120,8 @@ public final class RecordingController {
             if result.profile == .call && result.systemCapturedSilence {
                 lastError = "System-audio track was silent — make sure audio is playing, and that IN Meetings has 'System Audio Recording' in System Settings (a relaunch after granting may be needed)."
             }
-            jobBridge.enqueue(result)   // hand the recording to the transcription pipeline (ADR-009)
+            // Hand the recording to the transcription pipeline (ADR-009); record-time facts feed metadata.json.
+            jobBridge.enqueue(result, startedAt: startedAt, endedAt: Date(), captureSourceApp: recordingSourceApp)
             RecordingsStore.reveal(result.directory)
         }
     }

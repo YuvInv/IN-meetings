@@ -18,6 +18,10 @@ public final class JobBridge {
     private let python: URL
     private var watch: Timer?
     private var process: Process?
+    /// The SQLite index (ADR-006). Opened lazily on first completion so tests that never finish a job
+    /// don't touch Application Support; a failure to open is non-fatal (indexing is best-effort).
+    /// `@ObservationIgnored` keeps the `@Observable` macro from making it computed (lazy needs storage).
+    @ObservationIgnored private lazy var store: MeetingStore? = try? MeetingStore(url: MeetingStore.defaultURL)
 
     public init(pipelineDir: URL = JobBridge.defaultPipelineDir, python: URL = JobBridge.defaultPython) {
         self.pipelineDir = pipelineDir
@@ -41,23 +45,20 @@ public final class JobBridge {
     }
 
     /// Write the job file and start the pipeline for a finished recording.
-    public func enqueue(_ result: CaptureSession.Result) {
+    /// Write the job file and start the pipeline for a finished recording. The record-time facts
+    /// (`startedAt` / `endedAt` / `captureSourceApp`) feed metadata.json (ADR-005); sample rate +
+    /// durations are read from the WAVs by the pipeline, and video defaults off (V1) — so neither is
+    /// sent here.
+    public func enqueue(_ result: CaptureSession.Result,
+                        startedAt: Date = Date(), endedAt: Date = Date(),
+                        captureSourceApp: String? = nil) {
         phase = nil
         lastError = nil
         let dir = result.directory
         let jobURL = dir.appendingPathComponent("job.json")
 
-        var tracks: [String: String] = [:]
-        if result.mic != nil { tracks["mic"] = "mic.wav" }
-        if result.system != nil { tracks["system"] = "system.wav" }
-
-        let job: [String: Any] = [
-            "meeting_id": dir.lastPathComponent,
-            "directory": dir.path,
-            "profile": result.profile.rawValue,
-            "tracks": tracks,
-            "created_at": ISO8601DateFormatter().string(from: Date()),
-        ]
+        let job = Self.makeJob(result, startedAt: startedAt, endedAt: endedAt,
+                               captureSourceApp: captureSourceApp)
         do {
             let data = try JSONSerialization.data(withJSONObject: job, options: [.prettyPrinted, .sortedKeys])
             try data.write(to: jobURL, options: .atomic)
@@ -67,6 +68,29 @@ public final class JobBridge {
             return
         }
         spawn(jobURL: jobURL, statusURL: dir.appendingPathComponent("status.json"))
+    }
+
+    /// The Swift→Python job contract (ADR-009), kept pure (`nonisolated`) for testability off the main
+    /// actor. Keys mirror `pipeline/job.py`.
+    nonisolated static func makeJob(_ result: CaptureSession.Result,
+                                    startedAt: Date, endedAt: Date,
+                                    captureSourceApp: String?) -> [String: Any] {
+        var tracks: [String: String] = [:]
+        if result.mic != nil { tracks["mic"] = "mic.wav" }
+        if result.system != nil { tracks["system"] = "system.wav" }
+
+        let iso = ISO8601DateFormatter()
+        var job: [String: Any] = [
+            "meeting_id": result.directory.lastPathComponent,
+            "directory": result.directory.path,
+            "profile": result.profile.rawValue,
+            "tracks": tracks,
+            "started_at": iso.string(from: startedAt),
+            "ended_at": iso.string(from: endedAt),
+            "created_at": iso.string(from: endedAt),
+        ]
+        if let captureSourceApp { job["capture_source_app"] = captureSourceApp }
+        return job
     }
 
     private func spawn(jobURL: URL, statusURL: URL) {
@@ -121,10 +145,25 @@ public final class JobBridge {
                 self.phase = phase
                 if phase == "done" || phase == "failed" {
                     if phase == "failed" { self.lastError = obj["error"] as? String }
+                    if phase == "done" {
+                        self.indexCompletedPackage(at: statusURL.deletingLastPathComponent())
+                    }
                     captureLog.notice("jobbridge.finished phase=\(phase, privacy: .public)")
                     timer.invalidate()
                 }
             }
+        }
+    }
+
+    /// Mirror a finished package into the SQLite index (ADR-006) so the dashboard can see it.
+    /// Best-effort + idempotent: an index failure must not break the recording flow (the on-disk
+    /// package is the durable source of truth, and re-indexing the same id just updates the row).
+    private func indexCompletedPackage(at folder: URL) {
+        do {
+            let record = try store?.indexPackage(at: folder)
+            captureLog.notice("jobbridge.indexed meeting=\(record?.id ?? "?", privacy: .public)")
+        } catch {
+            captureLog.error("jobbridge.index failed: \(error.localizedDescription, privacy: .public)")
         }
     }
 }
