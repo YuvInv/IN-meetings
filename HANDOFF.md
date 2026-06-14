@@ -32,7 +32,16 @@ Claude Code · 2026-06-14
   `docs/superpowers/plans/2026-06-14-phase2-calendar-context.md`.
 
 ## Next — START HERE
-- **⏳ LIVE-VERIFY Phase 2 slice 1 (needs you).** Two-for-one with the slice-6 sign-in:
+- **🔧 ACTION — enable the Google Calendar API** (blocks ALL calendar matching), then wait ~2 min:
+  `https://console.developers.google.com/apis/api/calendar-json.googleapis.com/overview?project=1062382667236`
+  Live test 2026-06-14 (folder `2026-06-14_15-44-15`): sign-in worked, the `calendar.events.readonly` scope
+  **was** granted, Drive returns 200 — but the Calendar API returns **403 "API … disabled"** for project
+  1062382667236. The Phase-2 code is correct; the API is simply off in the GCP project.
+- **✅ Two bugs fixed this session from that live test (committed):** (1) **silence-gating** — the solo Meet's
+  remote (`system`) track was digital zero and ivrit-whisper hallucinated Knesset boilerplate as **"Them"**;
+  silent tracks are now skipped (`asr.is_silent`). (2) **calendar error surfacing** — a fetch 403 now lands as
+  `context.sources.calendar:"error"` + a `context.md` note, not a silent "no event matched".
+- **⏳ RE-RUN the live-verify after enabling the API (needs you).** Two-for-one with the slice-6 sign-in:
   1. `make run-mac` → menu **reconnect Google** (the new `calendar.events.readonly` scope forces a re-consent
      — **watch the `ASWebAuthenticationSession` sheet appear**; this is also the slice-6 sign-in live-check).
   2. Put a matching event on your `primary` calendar; record a short real call.
@@ -58,6 +67,12 @@ Claude Code · 2026-06-14
   Phase-2 calendar re-consent.)
 - **Calendar fetch is best-effort + short-timeout (5 s) and runs before pipeline spawn** — offline/expired/no
   account simply writes no `context.input.json`, and the pipeline degrades to unbiased. It never blocks Stop.
+- **The Calendar API must be enabled in the OAuth client's GCP project (1062382667236).** Symptom if not:
+  fetch 403 "API … disabled" while Drive (same token) returns 200 and the scope is granted. Found 2026-06-14.
+- **ivrit-whisper hallucinates Hebrew on silence** (e.g. "אדוני היושב-ראש, חבריי חברי הכנסת" — Knesset
+  boilerplate). `asr.is_silent` (RMS < 1e-3) gates ASR + diarization so silent tracks (a solo call's remote
+  track is digital zero) are skipped. Partial-silence *within* an active track is a separate risk — whisper-cli
+  has `--vad`/`--suppress-nst` (needs a VAD model); evaluate vs the P1 eval set before adopting.
 - **@Observable + `lazy`** → mark non-observed stored props `@ObservationIgnored`. Pure helpers called from
   tests off the main actor need `nonisolated`.
 - (carried) pipeline tests run from `pipeline/` (or `PYTHONPATH=pipeline`); senko needs the pinned 3.11 venv;
