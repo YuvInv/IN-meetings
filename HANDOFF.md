@@ -25,17 +25,17 @@ Claude Code · 2026-06-14
   - **Two live-test bugs fixed + committed**: silence-gating (`asr.is_silent`) and calendar error surfacing.
 
 ## Next — START HERE
-- **Merge the open PR** (`feat/phase2-calendar-context` → `main`) once reviewed/CI-green.
-- **→ Phase 2 slice 2 — Saventa + Dealigence.** Same Swift-fetch / Python-transform shape: Saventa
-  (`sevanta_search_deals`) for the deal + Dealigence (`search-company`/`search-person`) for founders →
-  richer vocab + **authoritative** company name (replaces the domain-derived guess) + founder priors in
-  `context.md`; sets `company.matched:true` + `sevanta_deal_id`/`dealigence_id`. Credentials: **Swift-owned
-  API keys in Keychain** (mirror the slice-6 OAuth-in-Swift pattern; never hand secrets to the subprocess).
-- **Robustness follow-up (from the live test):** `asr.is_silent` is a *whole-track* gate; partial silence
-  *within* an active remote track could still hallucinate. Evaluate whisper-cli `--vad` (needs a VAD model)
-  / `--suppress-nst` **against the P1 eval set** before adopting — don't regress the P1 WER baseline.
-- Per-company correction is best-effort transliteration until slice 2's authoritative names + accumulated
-  observed variants land.
+- **Merge the open PR** (`feat/phase2-calendar-context` → `main`) when ready (it now also carries the
+  scope-defer + ASR-robustness work).
+- **VAD robustness (in progress):** `asr.is_silent` is a *whole-track* gate; partial silence *within* an
+  active track can still hallucinate. Wiring whisper-cli `--vad` (Silero model) + evaluating vs the P1 eval
+  set (`benchmarks/eval_audio/prelligence_6min.wav`) so WER doesn't regress.
+- **Then: app UX** — mila-like, **Liquid Glass** (macOS 26) dashboard + detail + settings + the "Record now"
+  overlay, with the **menu-bar icon complementing it** (Yuval's direction 2026-06-14). This is the H3/H4
+  harvest (DECISIONS 2026-06-14 mila eval) + the [[ux-liquid-glass]] standard. **Brainstorm scope first.**
+- **Saventa + Dealigence are OUT of the MVP → Phase 6** (deferred 2026-06-14): authoritative company name +
+  founder priors, post-rollout. Until then `company.matched:false` (domain-derived) + best-effort
+  transliteration.
 
 ## Gotchas (verified)
 - **The Google Calendar API must be enabled in the OAuth client's GCP project (1062382667236).** Enabled
