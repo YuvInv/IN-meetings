@@ -59,6 +59,12 @@ Claude Code · 2026-06-14
   interleaved float32 (−50 otherwise); pipeline is spawned, not compiled in; model download → `IN_MEETINGS_MODEL`.
 
 ## Open / follow-ups
+- **⚠️ PRE-ROLLOUT (DECISIONS 2026-06-14): single merged playback file.** Before team rollout, merge the dual
+  tracks into one playback artifact — `audio.wav` (mic+system, level-balanced) for audio, `meeting.mp4`
+  (video+audio muxed) for video calls — via an **AVFoundation render step in the app, kicked at Stop,
+  concurrent with transcription**. Keep the separate tracks as transcription inputs; Drive backup then uploads
+  the **merged** file instead of the separate tracks; the dashboard (H4) plays it. Listeners get the full
+  experience without seeing the recording channels.
 - (carried) **⏳ multi-party-call diarization quality** untested on a real 3+ call (MVP-accepted) — review the
   per-meeting `pipeline.log`.
 - SourceKit shows stale "Cannot find type … / No such module GRDB" squiggles after new files land until it
