@@ -20,6 +20,12 @@ Slices **1–4c are merged to `main`** (PRs #1 + #2). **Current branch: `feat/mi
   `JobBridge.spawn` now sets **`IN_MEETINGS_MODEL`** to the app-managed copy when present; `INMeetingsApp` downloads
   on launch and **gates Start until `.ready`**. 4 new tests; `swift build` + `swift test` (10/10) + `make build-mac` green.
   **Verified live**: launch kicks the download (CFNetwork temp grew past 19 MB); full install + SHA match confirmed.
+- **Harvest 3 ✅ "Record now" overlay** — `Apps/INMeetings/INMeetings/MeetingPrompt{Coordinator,Overlay}.swift` +
+  `Sources/INMeetingsCore/Detection/MeetingDetectionSettings.swift`. Liquid Glass non-activating `NSPanel`, fires on
+  our `CallDetector` **idle→armed** edge (app-agnostic; seeds `lastStatus=.idle` so launching mid-call still prompts);
+  Record / Not now (1 h snooze) / Don't-ask-for-app; menu toggle + Resume. 4 new tests. **Verified live**: card
+  auto-appears on a real Zoom call. Gotcha fixed: the DEBUG preview's buttons are no-ops (an earlier preview "Not now"
+  ran the real `snooze()` and silently suppressed prompts for an hour — looked like a broken auto-trigger).
 
 Slices, all verified **live**:
 - **1–4b ✅** (in `main`): menu-bar app, P3 detection + manual Start/Stop + global ⌃⌥⌘R hotkey, dual-track
@@ -37,10 +43,11 @@ Slices, all verified **live**:
   contract tests both sides. The `transcript.json` shape (segments + `speakers[]` + `diarized`) feeds this.
 - Add the **SQLite index** (ADR-006) — per-meeting folder cache + FTS5 later (dashboard is Phase 4).
 - Then **slice 6**: Drive sync (per-user OAuth, company-first layout — ADR-006). Verify each on a real meeting.
-- **Remaining mila harvests** (additive, must NOT block the core spine — plan: `~/.claude/plans/i-have-a-questions-cached-lark.md`):
-  **H3** "Record now" prompt overlay (driven by our `CallDetector`, app-agnostic — not mila's Zoom window poll);
-  **H4** dashboard views (after slices 5/6 give it data); **H2** packaging + Sparkle auto-update — **LAST, gated on
-  user prereqs**: Developer ID cert, notarization + Hardened Runtime, appcast host (GitHub Releases), EdDSA keys.
+- **Additive slices** (must NOT block the core spine — plan: `~/.claude/plans/i-have-a-questions-cached-lark.md`).
+  **H3 ✅ done.** Pending: **V1** call video capture (SCK, ON by default for calls, window-only — adds the Screen
+  Recording grant, reverses the no-Screen-Recording posture; DECISIONS 2026-06-14) · **V2** "meeting done?" auto-stop
+  prompt (armed→idle, debounced ~10–15 s, prompt-not-silent, keep-recording-if-ignored) · **H4** dashboard views
+  (after slices 5/6) · **H2** packaging + Sparkle — gated on Developer ID / notarization / appcast / EdDSA keys.
 
 ## Gotchas (verified)
 - **senko needs Python <3.14**; system `python3` is **3.14** → pipeline runs in a **pinned 3.11 venv**
