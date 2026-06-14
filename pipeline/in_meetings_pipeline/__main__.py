@@ -16,7 +16,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from .asr import ENGINE, model_revision, transcribe_track
+from .asr import ENGINE, is_silent, model_revision, transcribe_track
 from .context_assembler import assemble
 from .diarize import SpeakerTurn, diarize_track, label_track
 from .job import Job
@@ -59,16 +59,14 @@ def attribute_speakers(
         if mic_segs:
             out += mic_segs
             speakers.append({"id": "Me", "side": "internal", "track": "mic"})
-        if job.system and job.system.exists():
-            turns = _safe_turns(job.system)
+        if system_segs:  # empty when the remote track was silent/skipped → no fabricated "Them"
+            turns = _safe_turns(job.system) if (job.system and job.system.exists()) else []
             labeled, spk = label_track(
                 system_segs, turns, side="external", track="system", solo_label="Them"
             )
             out += labeled
             speakers += spk
             diarized = bool(turns)
-        else:
-            out += system_segs
 
     return merge(out), speakers, diarized
 
@@ -82,11 +80,11 @@ def run(job_path: Path) -> int:
         status.write("transcribing", 0.1)
         mic_segs: list[Segment] = []
         system_segs: list[Segment] = []
-        if job.mic and job.mic.exists():
+        if job.mic and job.mic.exists() and not is_silent(job.mic):
             base = "Speaker 1" if job.profile == "inPerson" else "Me"
             raw = transcribe_track(job.mic, job.directory / "mic.asr")
             mic_segs = segments_from_whisper(raw, base)
-        if job.system and job.system.exists():
+        if job.system and job.system.exists() and not is_silent(job.system):
             raw = transcribe_track(job.system, job.directory / "system.asr")
             system_segs = segments_from_whisper(raw, "Them")
 
