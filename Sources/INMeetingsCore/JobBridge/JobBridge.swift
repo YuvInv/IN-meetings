@@ -22,6 +22,9 @@ public final class JobBridge {
     /// don't touch Application Support; a failure to open is non-fatal (indexing is best-effort).
     /// `@ObservationIgnored` keeps the `@Observable` macro from making it computed (lazy needs storage).
     @ObservationIgnored private lazy var store: MeetingStore? = try? MeetingStore(url: MeetingStore.defaultURL)
+    /// Write-through Drive backup (slice 6), over the same store. No-op until the user connects an
+    /// account + picks a location, so it costs nothing when Drive isn't set up.
+    @ObservationIgnored private lazy var driveBackup: DriveBackup? = store.map { DriveBackup(meetingStore: $0) }
 
     public init(pipelineDir: URL = JobBridge.defaultPipelineDir, python: URL = JobBridge.defaultPython) {
         self.pipelineDir = pipelineDir
@@ -164,6 +167,11 @@ public final class JobBridge {
             captureLog.notice("jobbridge.indexed meeting=\(record?.id ?? "?", privacy: .public)")
         } catch {
             captureLog.error("jobbridge.index failed: \(error.localizedDescription, privacy: .public)")
+        }
+        // Write-through to Drive if the user has connected an account + chosen a location (best-effort,
+        // in the background; a no-op otherwise).
+        if let driveBackup {
+            Task { await driveBackup.syncIfConfigured(meetingID: folder.lastPathComponent, packageFolder: folder) }
         }
     }
 }
