@@ -132,6 +132,45 @@ public final class DriveClient: @unchecked Sendable {
         return try JSONDecoder().decode(IDOnly.self, from: response).id
     }
 
+    /// Upload a (potentially large) file by streaming it from disk through a resumable session — used for
+    /// the audio/video recordings so hundreds of MB never load into memory. Returns the new file id.
+    @discardableResult
+    public func uploadFileResumable(name: String, mimeType: String, fileURL: URL,
+                                    parentID: String, driveId: String?) async throws -> String {
+        // 1. Initiate a resumable session (metadata only); Google returns the session URI in `Location`.
+        var initiate = URLComponents(url: Self.uploadBase.appendingPathComponent("files"),
+                                     resolvingAgainstBaseURL: false)!
+        initiate.queryItems = [
+            URLQueryItem(name: "uploadType", value: "resumable"),
+            URLQueryItem(name: "fields", value: "id"),
+            URLQueryItem(name: "supportsAllDrives", value: "true"),
+        ]
+        var initRequest = URLRequest(url: initiate.url!)
+        initRequest.httpMethod = "POST"
+        initRequest.setValue("Bearer \(try await token())", forHTTPHeaderField: "Authorization")
+        initRequest.setValue("application/json; charset=UTF-8", forHTTPHeaderField: "Content-Type")
+        initRequest.setValue(mimeType, forHTTPHeaderField: "X-Upload-Content-Type")
+        initRequest.httpBody = try JSONSerialization.data(withJSONObject: ["name": name, "parents": [parentID]])
+
+        let (initData, initResponse) = try await session.data(for: initRequest)
+        guard let http = initResponse as? HTTPURLResponse, (200..<300).contains(http.statusCode),
+              let location = http.value(forHTTPHeaderField: "Location"),
+              let sessionURI = URL(string: location) else {
+            let status = (initResponse as? HTTPURLResponse)?.statusCode ?? -1
+            throw DriveError.http(status: status, body: String(decoding: initData, as: UTF8.self))
+        }
+
+        // 2. Stream the file to the session URI (which carries its own authorization).
+        var put = URLRequest(url: sessionURI)
+        put.httpMethod = "PUT"
+        put.setValue(mimeType, forHTTPHeaderField: "Content-Type")
+        let (data, response) = try await session.upload(for: put, fromFile: fileURL)
+        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            throw DriveError.http(status: http.statusCode, body: String(decoding: data, as: UTF8.self))
+        }
+        return try JSONDecoder().decode(IDOnly.self, from: data).id
+    }
+
     // MARK: - HTTP
 
     private func send(_ url: URL, method: String, contentType: String? = nil,

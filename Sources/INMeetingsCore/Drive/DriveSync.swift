@@ -5,6 +5,7 @@ import Foundation
 public protocol DriveUploading: Sendable {
     func findOrCreateFolder(name: String, parentID: String, driveId: String?) async throws -> String
     func uploadFile(name: String, mimeType: String, data: Data, parentID: String, driveId: String?) async throws -> String
+    func uploadFileResumable(name: String, mimeType: String, fileURL: URL, parentID: String, driveId: String?) async throws -> String
 }
 
 extension DriveClient: DriveUploading {}
@@ -14,10 +15,10 @@ public struct DriveSyncResult: Sendable {
     public let uploaded: [String]
 }
 
-/// Write-through sync of a finished context package to Drive (ADR-006): resolve/create
-/// `<Company>/<meeting>/` under the user's chosen location, upload the text package, and mark the index.
-/// Idempotent at the meeting level (skips an already-synced meeting). Audio/video are deferred (they
-/// need resumable upload + a retention policy, ADR-010).
+/// Write-through sync of a finished meeting to Drive (ADR-006): resolve/create `<Company>/<meeting>/`
+/// under the user's chosen location, upload the transcript + metadata (one request each) and the
+/// recordings (streamed via a resumable session), then mark the index. Idempotent at the meeting level
+/// (skips an already-synced meeting).
 public final class DriveSync: @unchecked Sendable {
     private let client: DriveUploading
     private let store: MeetingStore
@@ -27,12 +28,16 @@ public final class DriveSync: @unchecked Sendable {
         self.store = store
     }
 
-    /// The small text files that always sync. WAV/video are intentionally excluded for now.
-    static let syncFileNames = ["metadata.json", "transcript.json", "transcript.txt", "context.md", "slides_ocr.md"]
+    /// Small text files — uploaded in one request each.
+    static let textFileNames = ["metadata.json", "transcript.json", "transcript.txt", "context.md", "slides_ocr.md"]
+    /// Recordings — streamed from disk via a resumable session (can be hundreds of MB).
+    static let mediaFileNames = ["mic.wav", "system.wav", "video.mov"]
 
     static func mimeType(for name: String) -> String {
         if name.hasSuffix(".json") { return "application/json" }
         if name.hasSuffix(".md") { return "text/markdown" }
+        if name.hasSuffix(".wav") { return "audio/wav" }
+        if name.hasSuffix(".mov") { return "video/quicktime" }
         return "text/plain"
     }
 
@@ -57,10 +62,17 @@ public final class DriveSync: @unchecked Sendable {
             name: meetingID, parentID: companyID, driveId: location.driveID)
 
         var uploaded: [String] = []
-        for name in Self.syncFileNames {
+        for name in Self.textFileNames {
             guard let data = try? Data(contentsOf: packageFolder.appendingPathComponent(name)) else { continue }
             _ = try await client.uploadFile(name: name, mimeType: Self.mimeType(for: name),
                                             data: data, parentID: meetingFolderID, driveId: location.driveID)
+            uploaded.append(name)
+        }
+        for name in Self.mediaFileNames {
+            let fileURL = packageFolder.appendingPathComponent(name)
+            guard FileManager.default.fileExists(atPath: fileURL.path) else { continue }
+            _ = try await client.uploadFileResumable(name: name, mimeType: Self.mimeType(for: name),
+                                                     fileURL: fileURL, parentID: meetingFolderID, driveId: location.driveID)
             uploaded.append(name)
         }
 

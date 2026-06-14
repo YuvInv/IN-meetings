@@ -30,8 +30,8 @@ Claude Code · 2026-06-14
   - App target: `DriveAuth` (`ASWebAuthenticationSession` sign-in + Shared-Drive picker) + a menu section in
     `INMeetingsApp.swift` (Connect / account / choose location / disconnect); `Info.plist` registers the
     reversed-client-id redirect scheme.
-  - **Scope**: only the text package syncs (transcript/metadata/context); audio/video upload deferred
-    (resumable + retention, ADR-010). Fills the index's `driveFolderId`/`syncState`.
+  - **Scope**: text package uploads one-shot + the **recordings (mic/system.wav, video.mov) stream via a
+    resumable session** (per Yuval). Fills the index's `driveFolderId`/`syncState`.
 
 ## Next — START HERE
 - **⏳ LIVE-VERIFY slice 6 (needs you):** run the app → menu **"Connect Google Drive…"** → sign in with an
@@ -64,8 +64,8 @@ Claude Code · 2026-06-14
 - SourceKit shows stale "Cannot find type … / No such module GRDB" squiggles after new files land until it
   reindexes — cosmetic; `swift test` + `make build-mac` are the ground truth.
 - (carried) pyannote fallback not wired; onboarding TCC wizard minimal; Soniox fallback; ADR-010 counsel review.
-- Slice 6 follow-ups: audio/video upload (resumable + retention); tighten the Drive scope to `drive.file` if
-  per-user ownership changes; a `qa-slice6` script once the sign-in flow is live-verified.
+- Slice 6 follow-ups: a **retention/size cap** for the uploaded recordings (ADR-010 — they're GB-scale);
+  tighten the Drive scope to `drive.file` if per-user ownership changes; a `qa-slice6` script.
 
 ## Context
 - Env: macOS 26 / M3+/16GB. Local cache under `~/Library/Application Support/IN Meetings/` (`Recordings/`,
