@@ -78,6 +78,15 @@ public final class MeetingStore {
         try dbQueue.read { db in try MeetingRecord.fetchOne(db, key: id) }
     }
 
+    /// Record the Drive destination + sync state after an upload (slice 6).
+    public func setSyncState(id: String, driveFolderId: String?, syncState: String) throws {
+        try dbQueue.write { db in
+            try db.execute(
+                sql: "UPDATE meeting SET driveFolderId = ?, syncState = ? WHERE id = ?",
+                arguments: [driveFolderId, syncState, id])
+        }
+    }
+
     // MARK: - Schema
 
     private static var migrator: DatabaseMigrator {
