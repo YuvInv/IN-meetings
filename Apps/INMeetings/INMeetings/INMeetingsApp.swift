@@ -9,7 +9,8 @@ import INMeetingsCore
 /// the global ⌃⌥⌘R hotkey) auto-picks the profile and records. While recording, the menu-bar label
 /// shows a live running timer. On first launch a `ModelManager` downloads + verifies the Hebrew ASR
 /// model, gating Start until the pipeline has a model to run. A `MeetingPromptCoordinator` floats a
-/// Liquid Glass "Record now" card whenever a call is detected (Harvest 3).
+/// Liquid Glass "Record now" card whenever a call is detected (Harvest 3). `DriveAuth` connects a
+/// Google account + backup location so finished meetings sync to Drive (slice 6).
 @main
 struct INMeetingsApp: App {
     @State private var detector: CallDetector
@@ -17,6 +18,7 @@ struct INMeetingsApp: App {
     @State private var models: ModelManager
     @State private var promptSettings: MeetingDetectionSettings
     @State private var promptCoordinator: MeetingPromptCoordinator
+    @State private var drive: DriveAuth
 
     init() {
         let detector = CallDetector()
@@ -31,12 +33,13 @@ struct INMeetingsApp: App {
         let coordinator = MeetingPromptCoordinator(detector: detector, recorder: recorder, settings: settings)
         _promptCoordinator = State(initialValue: coordinator)
         coordinator.start()   // float a "Record now" card on each detected call (Harvest 3)
+        _drive = State(initialValue: DriveAuth())
     }
 
     var body: some Scene {
         MenuBarExtra {
             MenuContent(detector: detector, recorder: recorder, models: models,
-                        settings: promptSettings, coordinator: promptCoordinator)
+                        settings: promptSettings, coordinator: promptCoordinator, drive: drive)
         } label: {
             if recorder.isRecording {
                 Text("🔴 \(recorder.elapsedString)")
@@ -55,6 +58,7 @@ private struct MenuContent: View {
     var models: ModelManager
     var settings: MeetingDetectionSettings
     var coordinator: MeetingPromptCoordinator
+    var drive: DriveAuth
 
     var body: some View {
         switch recorder.state {
@@ -124,11 +128,44 @@ private struct MenuContent: View {
 
         Divider()
 
+        driveSection
+
+        Divider()
+
         Text("core v\(INMeetingsCore.version)")
 
         Button("Quit IN Meetings") {
             NSApplication.shared.terminate(nil)
         }
         .keyboardShortcut("q")
+    }
+
+    /// Connect a Google account + choose a backup Shared Drive (slice 6). Once both are set, finished
+    /// meetings upload automatically (handled in Core by `JobBridge`'s `DriveBackup`).
+    @ViewBuilder
+    private var driveSection: some View {
+        switch drive.status {
+        case .disconnected:
+            Button("Connect Google Drive…") { Task { await drive.connect() } }
+        case .connecting:
+            Text("Connecting to Google Drive…")
+        case let .failed(message):
+            Button("Connect Google Drive…") { Task { await drive.connect() } }
+            Text("⚠️ Drive: \(message)")
+        case let .connected(email):
+            Text("Drive: \(email)")
+            Menu(drive.location.map { "Backup: \($0.displayName)" } ?? "Choose backup location…") {
+                if drive.sharedDrives.isEmpty {
+                    Text("No Shared Drives found")
+                } else {
+                    ForEach(drive.sharedDrives, id: \.id) { sharedDrive in
+                        Button(sharedDrive.name) { Task { await drive.choose(sharedDrive) } }
+                    }
+                }
+                Divider()
+                Button("Refresh drives") { Task { await drive.refreshSharedDrives() } }
+            }
+            Button("Disconnect Drive") { drive.disconnect() }
+        }
     }
 }
