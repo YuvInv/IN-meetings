@@ -17,6 +17,7 @@ import sys
 from pathlib import Path
 
 from .asr import ENGINE, model_revision, transcribe_track
+from .context_assembler import assemble
 from .diarize import SpeakerTurn, diarize_track, label_track
 from .job import Job
 from .metadata import build_metadata
@@ -77,6 +78,7 @@ def run(job_path: Path) -> int:
     status = Status(job.directory, job.meeting_id)
     status.write("queued", 0.0)
     try:
+        ctx = assemble(job.directory)
         status.write("transcribing", 0.1)
         mic_segs: list[Segment] = []
         system_segs: list[Segment] = []
@@ -121,6 +123,7 @@ def run(job_path: Path) -> int:
                     language="he",
                     biased=biased,
                     vocabulary_terms_used=terms,
+                    context=ctx,
                 ),
                 ensure_ascii=False,
                 indent=2,

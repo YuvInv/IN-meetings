@@ -1,9 +1,9 @@
 """Assemble metadata.json — the ADR-005 sidecar — from record-time facts + transcription facts.
 
 The pipeline is the single writer of the context package (ADR-009): Swift hands record-time facts
-via job.json, Python merges them with the transcription/diarization results here. Forward-compatible
-(schema/metadata.schema.json): calendar / CRM / consent fields are emitted as null/empty placeholders
-and filled in by the Phase-2 context assembler — the shape is stable from the MVP on.
+via job.json, Python merges them with the transcription/diarization results here. The Phase-2 context
+assembler (context_assembler.py) supplies calendar-derived fields via `context`; absent it, the
+calendar/CRM/consent fields stay null/empty (forward-compatible — schema/metadata.schema.json).
 """
 
 from __future__ import annotations
@@ -11,6 +11,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from .context_assembler import AssembledContext
 from .job import Job
 
 SCHEMA_VERSION = "1.0"
@@ -55,6 +56,7 @@ def build_metadata(
     language: str,
     biased: bool,
     vocabulary_terms_used: list[str] | None = None,
+    context: AssembledContext | None = None,
 ) -> dict:
     """Build the metadata.json dict for a finished recording (validates against metadata.schema.json)."""
     durations: dict[str, float] = {}
@@ -71,22 +73,28 @@ def build_metadata(
     start, end = _meeting_times(job, durations.get("mic"))
     sample_rate = job.sample_rate or rates.get("mic") or rates.get("system")
 
+    cal_status = context.calendar_status if context else "empty"
+    attendees = (
+        [{"name": a.name, "email": a.email, "side": a.side, "matched_crm_contact_id": None}
+         for a in context.attendees]
+        if context else []
+    )
+    company = (
+        context.company if (context and context.company)
+        else {"name": None, "sevanta_deal_id": None, "dealigence_id": None, "matched": False}
+    )
+
     return {
         "schema_version": SCHEMA_VERSION,
         "meeting": {
-            "title": None,
+            "title": context.title if context else None,
             "start": start,
             "end": end,
             "type": _PROFILE_TO_TYPE.get(job.profile, "call"),
-            "calendar_event_id": None,
+            "calendar_event_id": context.calendar_event_id if context else None,
         },
-        "attendees": [],
-        "company": {
-            "name": None,
-            "sevanta_deal_id": None,
-            "dealigence_id": None,
-            "matched": False,
-        },
+        "attendees": attendees,
+        "company": company,
         "recording": {
             "durations": durations,
             "tracks": tracks,
@@ -102,7 +110,7 @@ def build_metadata(
             "vocabulary_terms_used": vocabulary_terms_used or [],
         },
         "context": {
-            "sources": {"calendar": "empty", "saventa": "empty", "dealigence": "empty"},
+            "sources": {"calendar": cal_status, "saventa": "empty", "dealigence": "empty"},
         },
         "consent": {"status": "none", "jurisdiction_hint": None},
     }
