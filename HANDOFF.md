@@ -9,72 +9,67 @@ Keep it short: last state, next steps, gotchas. History lives in git log.
 Claude Code · 2026-06-14
 
 ## Current State
-**MVP Phase 1 spine is complete + the context-package contract is frozen + Drive sync is built.**
-- Slices **1–4c + H0/H1/H3 + slice 5 (context package + SQLite index)** are **merged to `main`** (PRs #1–#4).
-- **Slice 5 is LIVE-VERIFIED** on a real Google Meet call (DB row: call / 2 speakers / real timestamps /
-  `capture_source_app`). The detect → record → transcribe → diarize → **package → index** chain works end-to-end.
-- **Slice 6 (Drive sync) is code-complete on branch `feat/slice-6-drive-sync`** (uncommitted/just-committed —
-  see git log): **42 Swift tests green, `make build-mac` green**, but the **interactive Google sign-in is not
-  yet live-verified** (needs a real account).
-
-### This session (2026-06-14): slice 5 live-verify + merge, then slice 6 — Drive sync
-- **Slice 5** committed (PR #4), live-verified on a real call, merged.
-- **Slice 6** built (DECISIONS 2026-06-14), **Swift-owned** (amends ADR-009) with a **per-user dynamic backup
-  location** (refines ADR-006 — each user connects their own account + picks their Drive; nothing hardcoded
-  except the OAuth client id in `DriveConfig`). All in `Sources/INMeetingsCore/Drive/`:
-  - `PKCE` + `GoogleOAuth` (auth URL + token bodies) · `GoogleTokenService` (live POST) · `DriveCredential` +
-    `KeychainTokenStore` (refresh-token carry-forward) · `DriveTokenManager` (refresh) · `DriveClient`
-    (Shared-Drive-aware: list drives, find/create folder, multipart upload, `accountEmail`) ·
-    `DriveLocationStore` · `DriveSync` (`<Company>/<meeting>/`, idempotent) · `DriveBackup` wired into
-    `JobBridge` to auto-upload on `done`.
-  - App target: `DriveAuth` (`ASWebAuthenticationSession` sign-in + Shared-Drive picker) + a menu section in
-    `INMeetingsApp.swift` (Connect / account / choose location / disconnect); `Info.plist` registers the
-    reversed-client-id redirect scheme.
-  - **Scope**: text package uploads one-shot + the **recordings (mic/system.wav, video.mov) stream via a
-    resumable session** (per Yuval). Fills the index's `driveFolderId`/`syncState`.
+**MVP Phase 1 spine + Drive sync merged; Phase 2 slice 1 (calendar context) LIVE-VERIFIED — PR open.**
+- Slices **1–5 + H0/H1/H3** and **slice 6 (Drive sync, PR #5)** are merged to `main`.
+- **Phase 2 slice 1 — calendar context assembler — is LIVE-VERIFIED (2026-06-14)** on branch
+  `feat/phase2-calendar-context` (DECISIONS 2026-06-14, amends ADR-004). **Python 45 tests + Swift 48 tests +
+  `make build-mac` green.** PR `feat/phase2-calendar-context` → `main` is open.
+  - **Swift** (`Sources/INMeetingsCore/Calendar/`): `CalendarClient` + `CalendarContext` fetch candidate
+    events for `[start−90m, end+30m]` and write `<meeting>/context.input.json` (with a `status` field) before
+    `JobBridge` spawns the pipeline. Reuses slice-6 Google OAuth + the `calendar.events.readonly` scope.
+  - **Python** (`context_assembler.py` + `data/core_lexicon.json`): match the event (max time-overlap),
+    split internal/external by the signed-in account's domain, build the post-correction vocab
+    (`context.vocab.json`), render `context.md` (priors + wall), merge into `metadata.json`. No schema change.
+  - **Verified on a real call**: `calendar:"ok"`, attendees/company by side in `context.md`, names corrected,
+    **no fabricated "Them"**. Required enabling the Calendar API first (see Gotchas).
+  - **Two live-test bugs fixed + committed**: silence-gating (`asr.is_silent`) and calendar error surfacing.
 
 ## Next — START HERE
-- **⏳ LIVE-VERIFY slice 6 (needs you):** run the app → menu **"Connect Google Drive…"** → sign in with an
-  IN Venture account → **choose a Shared Drive** as the backup location → record a short meeting → confirm an
-  `<Company>/<meeting>/` folder with the text files appears in that Drive, and the index row flips to
-  `syncState=synced`. **Watch the sign-in sheet:** the `ASWebAuthenticationSession` anchor in a menu-bar
-  (`LSUIElement`) app is the known-risky bit — if the consent window doesn't appear, ping me and I'll switch
-  to a browser-redirect (the URL scheme is already registered) or fix the anchor.
-- Then **commit/merge** slice 6 (PR open) and move to **Phase 2 — context assembler + biasing** (the
-  differentiator: Calendar + Saventa + Dealigence → ASR vocab + `context.md`; flips `metadata.transcription.
-  biased` + populates `attendees`/`company`/`context.sources`, all of which the schema already reserves).
-- Additive harvests (V1 call video, V2 auto-stop, H4 dashboard, H2 Sparkle) remain off the spine's path.
-- **Skills `--package` adapter** (ADR-005 part 2, Phase 3): coordinated change in `~/repos/claude-skills` —
-  mirror `schema/fixtures/golden-package/`.
+- **Merge the open PR** (`feat/phase2-calendar-context` → `main`) once reviewed/CI-green.
+- **→ Phase 2 slice 2 — Saventa + Dealigence.** Same Swift-fetch / Python-transform shape: Saventa
+  (`sevanta_search_deals`) for the deal + Dealigence (`search-company`/`search-person`) for founders →
+  richer vocab + **authoritative** company name (replaces the domain-derived guess) + founder priors in
+  `context.md`; sets `company.matched:true` + `sevanta_deal_id`/`dealigence_id`. Credentials: **Swift-owned
+  API keys in Keychain** (mirror the slice-6 OAuth-in-Swift pattern; never hand secrets to the subprocess).
+- **Robustness follow-up (from the live test):** `asr.is_silent` is a *whole-track* gate; partial silence
+  *within* an active remote track could still hallucinate. Evaluate whisper-cli `--vad` (needs a VAD model)
+  / `--suppress-nst` **against the P1 eval set** before adopting — don't regress the P1 WER baseline.
+- Per-company correction is best-effort transliteration until slice 2's authoritative names + accumulated
+  observed variants land.
 
 ## Gotchas (verified)
-- **New *app-target* files need `make gen`** before `make build-mac` — XcodeGen only auto-regenerates when
-  `project.yml` changes, not when you add a source file under `Apps/INMeetings/INMeetings/`.
-- **`ASWebAuthenticationSession` in a menu-bar app** has no natural window anchor (`AuthAnchor` falls back to
-  a transient `NSWindow`) — verify the sheet actually presents; browser-redirect is the fallback.
-- **@Observable + `lazy`** → mark non-observed stored props `@ObservationIgnored` (else the macro makes them
-  computed and `lazy` won't compile). Pure helpers called from tests off the main actor need `nonisolated`.
-- (carried) pipeline tests run from `pipeline/` (or `PYTHONPATH=pipeline`); `metadata.py` reads WAV info via
-  soundfile (float32); senko needs the pinned 3.11 venv; **TCC grant needs a relaunch**; tap write is
-  interleaved float32 (−50 otherwise); pipeline is spawned, not compiled in; model download → `IN_MEETINGS_MODEL`.
+- **The Google Calendar API must be enabled in the OAuth client's GCP project (1062382667236).** Enabled
+  2026-06-14. Symptom if ever off again: Calendar fetch 403 "API … disabled" while Drive (same token) returns
+  200 and the scope is granted → surfaces as `metadata.context.sources.calendar:"error"`.
+- **ivrit-whisper hallucinates Hebrew on silence** (e.g. "אדוני היושב-ראש, חבריי חברי הכנסת" — Knesset
+  boilerplate). `asr.is_silent` (RMS < 1e-3) gates ASR + diarization so silent tracks (a solo call's remote
+  track is digital zero) are skipped. Partial-silence within an active track is the open follow-up above.
+- **New *app-target* files need `make gen`** before `make build-mac`. New **`INMeetingsCore`** files are
+  picked up by SPM automatically.
+- **`ASWebAuthenticationSession` in a menu-bar app**: the calendar re-consent exercised the slice-6 sign-in
+  sheet successfully (2026-06-14). `AuthAnchor` falls back to a transient `NSWindow`; browser-redirect is the
+  fallback if it ever fails.
+- **Calendar fetch is best-effort + short-timeout (5 s) and runs before pipeline spawn** — failure writes a
+  `status:"error"` (or nothing when not connected) and the pipeline degrades to unbiased. Never blocks Stop.
+- (carried) pipeline tests run from `pipeline/` (or `PYTHONPATH=pipeline`); senko needs the pinned 3.11 venv;
+  **TCC grant needs a relaunch**; tap write is interleaved float32 (−50 otherwise); pipeline is spawned, not
+  compiled in; model download → `IN_MEETINGS_MODEL`.
 
 ## Open / follow-ups
-- **⚠️ PRE-ROLLOUT (DECISIONS 2026-06-14): single merged playback file.** Before team rollout, merge the dual
-  tracks into one playback artifact — `audio.wav` (mic+system, level-balanced) for audio, `meeting.mp4`
-  (video+audio muxed) for video calls — via an **AVFoundation render step in the app, kicked at Stop,
-  concurrent with transcription**. Keep the separate tracks as transcription inputs; Drive backup then uploads
-  the **merged** file instead of the separate tracks; the dashboard (H4) plays it. Listeners get the full
-  experience without seeing the recording channels.
-- (carried) **⏳ multi-party-call diarization quality** untested on a real 3+ call (MVP-accepted) — review the
-  per-meeting `pipeline.log`.
-- SourceKit shows stale "Cannot find type … / No such module GRDB" squiggles after new files land until it
-  reindexes — cosmetic; `swift test` + `make build-mac` are the ground truth.
+- **Partial-silence hallucination** (above) — the most important robustness gap for real multi-party calls.
+- **Phase 2 slice 1 follow-ups**: per-company variant accumulation from real ASR misses; a fuzzy/edit-distance
+  post-correct pass; calendars beyond `primary`; multiple internal domains (config); title-based company fallback.
+- (carried) **⚠️ PRE-ROLLOUT: single merged playback file** (DECISIONS 2026-06-14) — AVFoundation render at
+  Stop → `audio.wav` / `meeting.mp4`; Drive then uploads the merged file; the dashboard (H4) plays it.
+- (carried) **⏳ multi-party-call diarization quality** untested on a real 3+ call — review the per-meeting
+  `pipeline.log`.
+- (carried) Slice 6: retention/size cap for uploaded recordings (ADR-010); tighten Drive scope to `drive.file`.
 - (carried) pyannote fallback not wired; onboarding TCC wizard minimal; Soniox fallback; ADR-010 counsel review.
-- Slice 6 follow-ups: a **retention/size cap** for the uploaded recordings (ADR-010 — they're GB-scale);
-  tighten the Drive scope to `drive.file` if per-user ownership changes; a `qa-slice6` script.
 
 ## Context
 - Env: macOS 26 / M3+/16GB. Local cache under `~/Library/Application Support/IN Meetings/` (`Recordings/`,
-  `Models/`, `meetings.db`); Drive = per-user OAuth (client id in `DriveConfig`), each user picks the destination.
+  `Models/`, `meetings.db`); Google = per-user OAuth (client id in `DriveConfig`; scopes **drive +
+  calendar.events.readonly**), each user connects their own account + picks the Drive destination.
 - Pipeline dev paths hardcoded in `JobBridge` (overridable via env); Phase 5 bundles the pipeline + a sealed env.
-- Downstream skills call the Timeless API directly today — the context package is a NEW contract (ADR-005).
+- Downstream skills call the Timeless API directly today — the context package is a NEW contract (ADR-005); the
+  skills `--package` adapter (ADR-005 part 2) is Phase 3.

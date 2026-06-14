@@ -63,6 +63,6 @@ final class DriveOAuthTests: XCTestCase {
         XCTAssertTrue(DriveConfig.oauth.clientID.hasPrefix("1062382667236-"))
         XCTAssertEqual(DriveConfig.oauth.redirectURI,
                        "com.googleusercontent.apps.1062382667236-p1ignhh12l0e9al7he5esph13s8lm1qf:/oauth2redirect")
-        XCTAssertEqual(DriveConfig.oauth.scopes, ["https://www.googleapis.com/auth/drive"])
+        XCTAssertTrue(DriveConfig.oauth.scopes.contains("https://www.googleapis.com/auth/drive"))
     }
 }

@@ -25,6 +25,9 @@ public final class JobBridge {
     /// Write-through Drive backup (slice 6), over the same store. No-op until the user connects an
     /// account + picks a location, so it costs nothing when Drive isn't set up.
     @ObservationIgnored private lazy var driveBackup: DriveBackup? = store.map { DriveBackup(meetingStore: $0) }
+    /// Phase-2 calendar context (ADR-004): fetched before spawn so the assembler has its input. No-op
+    /// until the user connects a Google account (the same credential as Drive).
+    @ObservationIgnored private lazy var calendarContext: CalendarContext? = CalendarContext()
 
     public init(pipelineDir: URL = JobBridge.defaultPipelineDir, python: URL = JobBridge.defaultPython) {
         self.pipelineDir = pipelineDir
@@ -70,7 +73,15 @@ public final class JobBridge {
             captureLog.error("jobbridge.writeJob failed: \(error.localizedDescription, privacy: .public)")
             return
         }
-        spawn(jobURL: jobURL, statusURL: dir.appendingPathComponent("status.json"))
+        let statusURL = dir.appendingPathComponent("status.json")
+        phase = "queued"
+        // Fetch calendar context (best-effort, short timeout) *before* spawning so the assembler has its
+        // context.input.json; then start the pipeline. A no-op when no Google account is connected.
+        Task { @MainActor in
+            await self.calendarContext?.writeInput(into: dir, startedAt: startedAt, endedAt: endedAt,
+                                                   captureSourceApp: captureSourceApp)
+            self.spawn(jobURL: jobURL, statusURL: statusURL)
+        }
     }
 
     /// The Swift→Python job contract (ADR-009), kept pure (`nonisolated`) for testability off the main

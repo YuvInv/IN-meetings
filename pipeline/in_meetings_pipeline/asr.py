@@ -39,3 +39,25 @@ def transcribe_track(wav: Path, out_base: Path, language: str = "he", model: Pat
     subprocess.run(cmd, check=True, capture_output=True)
     raw = json.loads(Path(f"{out_base}.json").read_text(encoding="utf-8"))
     return raw.get("transcription", [])
+
+
+def is_silent(wav: Path, rms_threshold: float = 1e-3) -> bool:
+    """True when a track carries no meaningful audio energy.
+
+    Guards ASR against whisper.cpp hallucinating Hebrew text on silence: the remote ("system") track of
+    a solo call is digital zero, and the ivrit model invents Knesset boilerplate on it (observed
+    2026-06-14, attributed to "Them"). RMS, not peak, so a stray click doesn't defeat the gate; the
+    threshold sits far below real speech (even a fraction of a second of speech in a long track clears it).
+    """
+    try:
+        import numpy as np
+        import soundfile as sf
+
+        data, _ = sf.read(str(wav))
+        if getattr(data, "ndim", 1) > 1:
+            data = data.mean(axis=1)
+        if len(data) == 0:
+            return True
+        return float(np.sqrt(np.mean(np.square(data)))) < rms_threshold
+    except Exception:  # noqa: BLE001 — if we can't measure it, don't suppress; fall through to ASR
+        return False

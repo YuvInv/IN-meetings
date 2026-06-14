@@ -7,6 +7,7 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 
+from in_meetings_pipeline.context_assembler import AssembledContext, Attendee
 from in_meetings_pipeline.job import Job
 from in_meetings_pipeline.metadata import SCHEMA_VERSION, build_metadata
 
@@ -52,3 +53,32 @@ def test_build_metadata_in_person_has_no_system_track(tmp_path: Path) -> None:
     assert md["meeting"]["type"] == "in_person"
     assert md["recording"]["tracks"] == ["mic"]
     assert md["recording"]["capture_source_app"] is None
+
+
+def test_build_metadata_merges_calendar_context(tmp_path: Path) -> None:
+    mic = _wav(tmp_path / "mic.wav", 1.0)
+    job = Job("2026-06-14-1000", tmp_path, "call", mic, None, capture_source_app="Chrome")
+    ctx = AssembledContext(
+        title="Prelligence <> IN Venture", calendar_event_id="e1",
+        attendees=[Attendee("Yuval", "yuval@in-venture.com", "internal"),
+                   Attendee("Founder", "founder@prelligence.com", "external")],
+        company={"name": "Prelligence", "sevanta_deal_id": None, "dealigence_id": None, "matched": False},
+        calendar_status="ok")
+
+    md = build_metadata(job, engine="whisper.cpp", model_revision="rev", language="he",
+                        biased=True, vocabulary_terms_used=["IN Venture"], context=ctx)
+
+    assert md["meeting"]["title"] == "Prelligence <> IN Venture"
+    assert md["meeting"]["calendar_event_id"] == "e1"
+    assert md["company"]["name"] == "Prelligence"
+    assert {a["side"] for a in md["attendees"]} == {"internal", "external"}
+    assert md["attendees"][0]["matched_crm_contact_id"] is None
+    assert md["context"]["sources"]["calendar"] == "ok"
+
+
+def test_build_metadata_without_context_is_unchanged(tmp_path: Path) -> None:
+    mic = _wav(tmp_path / "mic.wav", 1.0)
+    job = Job("2026-06-14-1000", tmp_path, "call", mic, None)
+    md = build_metadata(job, engine="e", model_revision="r", language="he", biased=False)
+    assert md["attendees"] == []
+    assert md["context"]["sources"]["calendar"] == "empty"

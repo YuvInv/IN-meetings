@@ -3,6 +3,12 @@
 **Status:** Proposed · **Date:** 2026-06-11 · **Deciders:** Yuval (review)
 **Brief item:** C · **Research:** RESEARCH.md §3.4 (biasing), §0 (strategic bet)
 
+> **Amended 2026-06-14 (Phase 2 slice 1, calendar-first):** mechanism = deterministic post-correction
+> (not `initial_prompt`); runtime = **Swift fetch / Python transform** (not "the pipeline calls MCP
+> servers" — a headless subprocess can't reach MCP); calendar-first (Saventa/Dealigence = slice 2); the
+> internal/external split is derived from the signed-in account's domain. See `DECISIONS.md` 2026-06-14
+> and `docs/superpowers/specs/2026-06-14-phase2-calendar-context-design.md`.
+
 ## Context
 
 This is the core differentiator: feed the ASR what it needs to get Hebrew proper nouns and code-switched
