@@ -78,6 +78,13 @@ public final class JobBridge {
         // whisper-cli (slice 4b) and friends.
         var env = ProcessInfo.processInfo.environment
         env["PATH"] = "/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+        // Point the pipeline at the app-managed model once ModelManager has downloaded + verified it
+        // (Harvest 1). Until the file exists, leave IN_MEETINGS_MODEL unset so asr.py falls back to its
+        // benchmark copy (so a dev box with the benchmark model still transcribes pre-download).
+        let model = ModelManager.installedModelURL
+        if FileManager.default.fileExists(atPath: model.path) {
+            env["IN_MEETINGS_MODEL"] = model.path
+        }
         process.environment = env
 
         // Capture the pipeline's stdout+stderr into a per-meeting log — the durable trail for

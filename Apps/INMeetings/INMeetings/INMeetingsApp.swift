@@ -7,21 +7,26 @@ import INMeetingsCore
 /// Wires live call detection (P3) + the manual Start/Stop flow + dual-track capture (P2): a
 /// `CallDetector` polls Core Audio process I/O, and a `RecordingController` (toggled by the menu or
 /// the global ⌃⌥⌘R hotkey) auto-picks the profile and records. While recording, the menu-bar label
-/// shows a live running timer.
+/// shows a live running timer. On first launch a `ModelManager` downloads + verifies the Hebrew ASR
+/// model, gating Start until the pipeline has a model to run.
 @main
 struct INMeetingsApp: App {
     @State private var detector: CallDetector
     @State private var recorder: RecordingController
+    @State private var models: ModelManager
 
     init() {
         let detector = CallDetector()
         _detector = State(initialValue: detector)
         _recorder = State(initialValue: RecordingController(detector: detector))
+        let models = ModelManager()
+        _models = State(initialValue: models)
+        models.ensureReady()   // download + verify the Hebrew model on first launch (Harvest 1)
     }
 
     var body: some Scene {
         MenuBarExtra {
-            MenuContent(detector: detector, recorder: recorder)
+            MenuContent(detector: detector, recorder: recorder, models: models)
         } label: {
             if recorder.isRecording {
                 Text("🔴 \(recorder.elapsedString)")
@@ -37,6 +42,7 @@ struct INMeetingsApp: App {
 private struct MenuContent: View {
     var detector: CallDetector
     var recorder: RecordingController
+    var models: ModelManager
 
     var body: some View {
         switch recorder.state {
@@ -50,8 +56,17 @@ private struct MenuContent: View {
 
             Divider()
 
-            Button("Start Recording") { Task { await recorder.start() } }
-            Text("→ will record: \(recorder.pendingProfile.label)")
+            if models.isReady {
+                Button("Start Recording") { Task { await recorder.start() } }
+                Text("→ will record: \(recorder.pendingProfile.label)")
+            } else {
+                Text(models.statusText ?? "Preparing model…")
+                if case .failed = models.phase {
+                    Button("Retry Model Download") { models.retry() }
+                }
+                Button("Start Recording") { Task { await recorder.start() } }
+                    .disabled(true)
+            }
 
         case let .recording(profile, _):
             Text("🔴 Recording — \(profile.label)")

@@ -6,12 +6,20 @@ Keep it short: last state, next steps, gotchas. History lives in git log.
 -->
 
 ## Outgoing Agent
-Claude Code · 2026-06-11
+Claude Code · 2026-06-14
 
 ## Current State
 **MVP Phase 1: detect → dual-track record → on-device Hebrew transcription → speaker diarization works end to end.**
-PR #1 (slices 1–4b) is **merged to `main`**. Slice 4c is on branch **`feat/mvp-diarization`** (off `main`,
-**current branch**) — open a PR once reviewed.
+Slices **1–4c are merged to `main`** (PRs #1 + #2). **Current branch: `feat/mila-harvest`** (off `main`).
+
+### This session (2026-06-14): evaluated `island-io/mila` → continue ours + harvest (DECISIONS 2026-06-14)
+- **Harvest 0 ✅** Apache-2.0 attribution: `NOTICE`, `THIRD_PARTY_NOTICES.md`, `licenses/mila-LICENSE-2.0.txt`;
+  per-file `// Adapted from Mila …` headers on derived files.
+- **Harvest 1 ✅ model download on launch** — `Sources/INMeetingsCore/Models/{ModelManager,ModelCatalog}.swift`
+  (`@Observable`; URLSession download + streaming SHA-256 verify + atomic install; SHA pinned + verified vs HF LFS oid).
+  `JobBridge.spawn` now sets **`IN_MEETINGS_MODEL`** to the app-managed copy when present; `INMeetingsApp` downloads
+  on launch and **gates Start until `.ready`**. 4 new tests; `swift build` + `swift test` (10/10) + `make build-mac` green.
+  **Verified live**: launch kicks the download (CFNetwork temp grew past 19 MB); full install + SHA match confirmed.
 
 Slices, all verified **live**:
 - **1–4b ✅** (in `main`): menu-bar app, P3 detection + manual Start/Stop + global ⌃⌥⌘R hotkey, dual-track
@@ -29,6 +37,10 @@ Slices, all verified **live**:
   contract tests both sides. The `transcript.json` shape (segments + `speakers[]` + `diarized`) feeds this.
 - Add the **SQLite index** (ADR-006) — per-meeting folder cache + FTS5 later (dashboard is Phase 4).
 - Then **slice 6**: Drive sync (per-user OAuth, company-first layout — ADR-006). Verify each on a real meeting.
+- **Remaining mila harvests** (additive, must NOT block the core spine — plan: `~/.claude/plans/i-have-a-questions-cached-lark.md`):
+  **H3** "Record now" prompt overlay (driven by our `CallDetector`, app-agnostic — not mila's Zoom window poll);
+  **H4** dashboard views (after slices 5/6 give it data); **H2** packaging + Sparkle auto-update — **LAST, gated on
+  user prereqs**: Developer ID cert, notarization + Hardened Runtime, appcast host (GitHub Releases), EdDSA keys.
 
 ## Gotchas (verified)
 - **senko needs Python <3.14**; system `python3` is **3.14** → pipeline runs in a **pinned 3.11 venv**
@@ -40,6 +52,10 @@ Slices, all verified **live**:
   relaunch *after* granting. In-app `Last: mic/sys dB` is the capture-health check. (memory: `coreaudio-tap-gotchas`.)
 - **Tap write:** interleaved float32 — pin `AVAudioFile` to the tap format or `write(from:)` fails −50.
 - **Pipeline is spawned, not compiled in** — editing `pipeline/` takes effect without rebuilding the app.
+- **Model download (H1):** app fetches `ivrit-large-v3-turbo.ggml.bin` (~1.6 GB, SHA-pinned) to
+  `~/Library/Application Support/IN Meetings/Models/` on launch; `JobBridge` sets `IN_MEETINGS_MODEL` to it when
+  present, else `asr.py` uses the `pipeline/benchmarks/models/` copy. brew `whisper-cli` has **no CoreML** → mila's
+  ANE encoder was intentionally dropped (a Phase-5 `WHISPER_COREML` build would re-enable it).
 - Detection = bidirectional audio process; ASR biasing = post-correction (no-op until Phase-2 vocab).
 
 ## Open / follow-ups
