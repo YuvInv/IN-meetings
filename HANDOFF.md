@@ -27,12 +27,13 @@ Claude Code · 2026-06-14
 ## Next — START HERE
 - **Merge the open PR** (`feat/phase2-calendar-context` → `main`) when ready (it now also carries the
   scope-defer + ASR-robustness work).
-- **VAD robustness (in progress):** `asr.is_silent` is a *whole-track* gate; partial silence *within* an
-  active track can still hallucinate. Wiring whisper-cli `--vad` (Silero model) + evaluating vs the P1 eval
-  set (`benchmarks/eval_audio/prelligence_6min.wav`) so WER doesn't regress.
-- **Then: app UX** — mila-like, **Liquid Glass** (macOS 26) dashboard + detail + settings + the "Record now"
-  overlay, with the **menu-bar icon complementing it** (Yuval's direction 2026-06-14). This is the H3/H4
-  harvest (DECISIONS 2026-06-14 mila eval) + the [[ux-liquid-glass]] standard. **Brainstorm scope first.**
+- **✅ VAD robustness DONE (2026-06-14):** ASR runs whisper `--vad` (Silero, app-provisioned via a second
+  `ModelManager(entry:.sileroVad)` + `IN_MEETINGS_VAD_MODEL`) when present; gated so it degrades to
+  `is_silent` otherwise. Validated on benchmarks (0 hallucination on the silent track; P1 proper nouns
+  preserved). Committed.
+- **→ NOW: app UX** — mila-like, **Liquid Glass** (macOS 26) dashboard + detail + settings + the "Record
+  now" overlay, with the **menu-bar icon complementing it** (Yuval's direction 2026-06-14). This is the
+  H3/H4 harvest (DECISIONS 2026-06-14 mila eval) + the [[ux-liquid-glass]] standard. **Brainstorm scope first.**
 - **Saventa + Dealigence are OUT of the MVP → Phase 6** (deferred 2026-06-14): authoritative company name +
   founder priors, post-rollout. Until then `company.matched:false` (domain-derived) + best-effort
   transliteration.
