@@ -199,3 +199,12 @@ def test_run_invokes_assembler_and_packages(tmp_path: Path) -> None:
     assert md["meeting"]["calendar_event_id"] == "e1"
     assert md["context"]["sources"]["calendar"] == "ok"
     assert (tmp_path / "context.md").exists()
+
+
+def test_assemble_surfaces_fetch_error(tmp_path: Path) -> None:
+    # A Calendar 403 (e.g. API disabled) must read as calendar:"error", not a silent "no match".
+    (tmp_path / "context.input.json").write_text(
+        json.dumps({"status": "error", "error": "403 Calendar API disabled"}), encoding="utf-8")
+    ctx = assemble(tmp_path)
+    assert ctx.calendar_status == "error"
+    assert "failed" in (tmp_path / "context.md").read_text(encoding="utf-8").lower()

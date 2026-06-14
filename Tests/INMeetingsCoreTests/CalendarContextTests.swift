@@ -20,6 +20,7 @@ final class CalendarContextTests: XCTestCase {
             startedAt: Date(timeIntervalSince1970: 1_780_000_000),
             endedAt: Date(timeIntervalSince1970: 1_780_001_800))
 
+        XCTAssertEqual(payload["status"] as? String, "ok")
         XCTAssertEqual(payload["internal_domain"] as? String, "in-venture.com")
         let hints = payload["hints"] as! [String: Any]
         XCTAssertEqual(hints["capture_source_app"] as? String, "Chrome")

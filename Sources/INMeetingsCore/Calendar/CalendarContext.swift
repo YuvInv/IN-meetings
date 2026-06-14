@@ -43,13 +43,20 @@ public final class CalendarContext: @unchecked Sendable {
             let payload = Self.inputPayload(internalDomain: domain, candidates: events,
                                             captureSourceApp: captureSourceApp,
                                             startedAt: startedAt, endedAt: endedAt)
-            let data = try JSONSerialization.data(withJSONObject: payload,
-                                                  options: [.prettyPrinted, .sortedKeys])
-            try data.write(to: directory.appendingPathComponent("context.input.json"), options: .atomic)
+            try Self.write(payload, into: directory)
             calendarLog.notice("calendar context written (\(events.count, privacy: .public) candidates)")
         } catch {
-            calendarLog.error("calendar context skipped: \(error.localizedDescription, privacy: .public)")
+            // Surface the failure (status:"error") so a Calendar 403 shows up as calendar:"error" in
+            // metadata + context.md, instead of looking like a silent "no event matched".
+            calendarLog.error("calendar context failed: \(error.localizedDescription, privacy: .public)")
+            try? Self.write(["status": "error", "error": error.localizedDescription], into: directory)
         }
+    }
+
+    /// Atomically write a payload to `<meeting>/context.input.json`.
+    static func write(_ payload: [String: Any], into directory: URL) throws {
+        let data = try JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted, .sortedKeys])
+        try data.write(to: directory.appendingPathComponent("context.input.json"), options: .atomic)
     }
 
     // MARK: - Pure helpers (unit-tested)
@@ -79,6 +86,7 @@ public final class CalendarContext: @unchecked Sendable {
             ]
         }
         return [
+            "status": "ok",
             "internal_domain": internalDomain,
             "hints": ["capture_source_app": captureSourceApp ?? "",
                       "started_at": iso.string(from: startedAt),

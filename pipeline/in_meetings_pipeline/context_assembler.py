@@ -163,6 +163,8 @@ def build_vocab(company: dict | None) -> list[dict]:
 # --- context.md -------------------------------------------------------------
 
 def render_context_md(ctx: AssembledContext) -> str:
+    if ctx.calendar_status == "error":
+        return _WALL + "\nCalendar lookup failed (see metadata / app logs) — priors unavailable.\n"
     if ctx.calendar_status != "ok":
         return _WALL + "\nNo calendar event matched; priors unavailable.\n"
     lines = [_WALL, ""]
@@ -195,15 +197,20 @@ def assemble(directory: Path) -> AssembledContext:
         input_path = directory / "context.input.json"
         if input_path.exists():
             data = json.loads(input_path.read_text(encoding="utf-8"))
-            internal_domain = data.get("internal_domain") or ""
-            hints = data.get("hints") or {}
-            event = match_event(data.get("candidates") or [],
-                                hints.get("started_at") or "", hints.get("ended_at") or "")
-            if event is not None:
-                attendees = split_sides(event, internal_domain)
-                company = resolve_company(attendees, event.get("summary"))
-                ctx = AssembledContext(title=event.get("summary"), calendar_event_id=event.get("id"),
-                                       attendees=attendees, company=company, calendar_status="ok")
+            if data.get("status") == "error":
+                # Swift reached Google but the Calendar API failed (e.g. 403 API-disabled / scope).
+                # Surface it as calendar:"error" rather than letting it look like "no event matched".
+                ctx = AssembledContext(calendar_status="error")
+            else:
+                internal_domain = data.get("internal_domain") or ""
+                hints = data.get("hints") or {}
+                event = match_event(data.get("candidates") or [],
+                                    hints.get("started_at") or "", hints.get("ended_at") or "")
+                if event is not None:
+                    attendees = split_sides(event, internal_domain)
+                    company = resolve_company(attendees, event.get("summary"))
+                    ctx = AssembledContext(title=event.get("summary"), calendar_event_id=event.get("id"),
+                                           attendees=attendees, company=company, calendar_status="ok")
     except Exception as exc:  # noqa: BLE001 — the assembler must never fail the pipeline
         print(f"context assembler degraded ({type(exc).__name__}: {exc})", file=sys.stderr)
         ctx = AssembledContext(calendar_status="error")
