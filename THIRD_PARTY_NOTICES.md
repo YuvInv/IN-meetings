@@ -19,9 +19,14 @@ See also [`NOTICE`](NOTICE) and [`licenses/`](licenses/).
     encoder download was dropped (inert with the Homebrew `whisper-cli`, which is
     built without CoreML). The installed model feeds the **Python** pipeline via
     the `IN_MEETINGS_MODEL` environment variable, not Swift whisper bindings.
+  - `Apps/INMeetings/INMeetings/MeetingPromptOverlay.swift`,
+    `Apps/INMeetings/INMeetings/MeetingPromptCoordinator.swift`, and
+    `Sources/INMeetingsCore/Detection/MeetingDetectionSettings.swift` — the "Record now"
+    meeting-prompt overlay (Harvest 3). Re-skinned in macOS 26 Liquid Glass; driven by our Core Audio
+    `CallDetector` (app-agnostic, no Screen Recording) instead of Mila's Zoom-only window-title poll;
+    `@Observable`/`@MainActor` rewrite; global snooze keyed on the detector's friendly app name.
   - _Planned (later harvests, this file will be updated as they land):_ in-place
-    update relocation (`BundleRelocator`), the "Record now" meeting-prompt
-    overlay, and `scripts/make-dmg.sh`.
+    update relocation (`BundleRelocator`) and `scripts/make-dmg.sh`.
 
 ## Runtime dependencies (downloaded/installed, not vendored in this repo)
 
