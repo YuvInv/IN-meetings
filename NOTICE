@@ -1,0 +1,16 @@
+IN-meetings
+Copyright (c) 2026 IN Venture
+
+This product includes software adapted from Mila
+(https://github.com/island-io/mila), used under the Apache License, Version 2.0.
+The following attribution is reproduced from Mila's NOTICE file:
+
+    Mila
+    Originally developed by Uri Harduf at Island Technology, Inc.
+    Copyright (c) 2026 Island Technology, Inc.
+
+    This product includes software developed at Island Technology, Inc.
+
+See THIRD_PARTY_NOTICES.md for the full list of adapted components and other
+third-party software, and licenses/mila-LICENSE-2.0.txt for the full text of
+the Apache License, Version 2.0.
