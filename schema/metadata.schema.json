@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://in-venture.com/in-meetings/schema/metadata.schema.json",
+  "title": "IN-Meetings metadata.json",
+  "description": "Per-meeting metadata sidecar (ADR-005). Forward-compatible: MVP emits what the recorder + pipeline know; calendar/CRM/consent fields are filled by Phase 2 (context assembler), and are null/empty until then. schema_version tracks contract evolution; consumers MUST ignore unknown fields.",
+  "type": "object",
+  "required": ["schema_version", "meeting", "recording", "transcription"],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "description": "Contract version, e.g. \"1.0\". Bumped on any additive or breaking change."
+    },
+    "meeting": {
+      "type": "object",
+      "required": ["type", "start", "end"],
+      "properties": {
+        "title": {
+          "type": ["string", "null"],
+          "description": "Calendar-authoritative when matched (Phase 2); null at MVP."
+        },
+        "start": { "type": "string", "format": "date-time", "description": "ISO-8601." },
+        "end": { "type": "string", "format": "date-time", "description": "ISO-8601." },
+        "type": {
+          "enum": ["call", "in_person"],
+          "description": "in_person packages have no audio_system.wav; all speakers on the mic track (ADR-011)."
+        },
+        "calendar_event_id": {
+          "type": ["string", "null"],
+          "description": "null until matched (Phase 2)."
+        }
+      }
+    },
+    "attendees": {
+      "type": "array",
+      "description": "Empty until calendar/CRM match (Phase 2).",
+      "items": {
+        "type": "object",
+        "required": ["name", "side"],
+        "properties": {
+          "name": { "type": "string" },
+          "email": { "type": ["string", "null"] },
+          "side": { "enum": ["internal", "external"] },
+          "matched_crm_contact_id": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "company": {
+      "type": ["object", "null"],
+      "description": "null or matched:false when the meeting is not yet tied to a deal (Phase 2 / manual dashboard fix).",
+      "required": ["matched"],
+      "properties": {
+        "name": { "type": ["string", "null"] },
+        "sevanta_deal_id": { "type": ["string", "null"] },
+        "dealigence_id": { "type": ["string", "null"] },
+        "matched": { "type": "boolean" }
+      }
+    },
+    "recording": {
+      "type": "object",
+      "required": ["tracks", "video"],
+      "properties": {
+        "durations": {
+          "type": "object",
+          "description": "Per-track seconds, e.g. {\"mic\": 3120.5, \"system\": 3118.9}.",
+          "additionalProperties": { "type": "number" }
+        },
+        "tracks": {
+          "type": "array",
+          "items": { "enum": ["mic", "system"] },
+          "description": "Present audio tracks. in_person = [\"mic\"]."
+        },
+        "sample_rate": { "type": ["integer", "null"] },
+        "capture_source_app": {
+          "type": ["string", "null"],
+          "description": "Bundle id / friendly name of the detected call app (ADR-001 / P3). null for in_person."
+        },
+        "video": {
+          "type": "boolean",
+          "description": "Whether video.mov was captured (V1). false at MVP."
+        }
+      }
+    },
+    "transcription": {
+      "type": "object",
+      "required": ["engine", "model_revision", "language", "biased"],
+      "properties": {
+        "engine": { "type": "string" },
+        "model_revision": { "type": "string" },
+        "language": { "type": "string" },
+        "biased": { "type": "boolean" },
+        "vocabulary_terms_used": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Biasing terms applied (Phase 2). Empty at MVP."
+        }
+      }
+    },
+    "context": {
+      "type": "object",
+      "description": "Per-source assembler status (ADR-004). All \"empty\" at MVP.",
+      "properties": {
+        "sources": {
+          "type": "object",
+          "properties": {
+            "calendar": { "enum": ["ok", "empty", "error"] },
+            "saventa": { "enum": ["ok", "empty", "error"] },
+            "dealigence": { "enum": ["ok", "empty", "error"] }
+          }
+        }
+      }
+    },
+    "consent": {
+      "type": "object",
+      "description": "Consent posture (ADR-010).",
+      "properties": {
+        "status": { "enum": ["verbal", "calendar-notice", "none", "internal"] },
+        "jurisdiction_hint": { "type": ["string", "null"] }
+      }
+    }
+  }
+}

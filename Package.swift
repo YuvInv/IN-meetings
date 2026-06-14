@@ -10,8 +10,14 @@ let package = Package(
     products: [
         .library(name: "INMeetingsCore", targets: ["INMeetingsCore"]),
     ],
+    dependencies: [
+        // Local SQLite index + dashboard store (ADR-006). Pinned to the 6.x line (Swift 5.9 toolchain).
+        .package(url: "https://github.com/groue/GRDB.swift.git", from: "6.0.0"),
+    ],
     targets: [
-        .target(name: "INMeetingsCore"),
+        .target(name: "INMeetingsCore", dependencies: [
+            .product(name: "GRDB", package: "GRDB.swift"),
+        ]),
         .testTarget(name: "INMeetingsCoreTests", dependencies: ["INMeetingsCore"]),
     ]
 )

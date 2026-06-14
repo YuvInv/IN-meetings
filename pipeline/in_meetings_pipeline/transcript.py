@@ -6,7 +6,7 @@ diarization *within* a track (several remote participants, or an in-person room)
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 
 
 @dataclass
@@ -41,14 +41,35 @@ def to_json(
     segments: list[Segment],
     speakers: list[dict] | None = None,
     diarized: bool = False,
+    *,
+    engine: str = "",
+    model_revision: str = "",
+    biased: bool = False,
 ) -> dict:
+    """Serialize to the frozen ADR-005 transcript.json shape (schema/transcript.schema.json).
+
+    Times are seconds; each utterance's speaker_id references speakers[].id. meeting_id / profile /
+    diarized are additive fields (consumers ignore unknowns).
+    """
     return {
         "meeting_id": meeting_id,
         "profile": profile,
         "language": language,
+        "engine": engine,
+        "model_revision": model_revision,
+        "biased": biased,
         "diarized": diarized,
         "speakers": speakers or [],
-        "segments": [asdict(s) for s in segments],
+        "utterances": [
+            {
+                "text": s.text,
+                "start": round(s.start_ms / 1000, 3),
+                "end": round(s.end_ms / 1000, 3),
+                "speaker_id": s.speaker,
+                "confidence": None,
+            }
+            for s in segments
+        ],
     }
 
 

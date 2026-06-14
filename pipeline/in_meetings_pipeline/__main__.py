@@ -16,9 +16,10 @@ import subprocess
 import sys
 from pathlib import Path
 
-from .asr import transcribe_track
+from .asr import ENGINE, model_revision, transcribe_track
 from .diarize import SpeakerTurn, diarize_track, label_track
 from .job import Job
+from .metadata import build_metadata
 from .postcorrect import correct
 from .status import Status
 from .transcript import Segment, merge, segments_from_whisper, to_json, to_text
@@ -91,20 +92,44 @@ def run(job_path: Path) -> int:
         segments, speakers, diarized = attribute_speakers(job, mic_segs, system_segs)
 
         vocab = load_vocab(job.directory)
+        biased = bool(vocab)
+        terms = [t.get("canonical", "") for t in vocab if isinstance(t, dict)]
+        terms = [t for t in terms if t]
         for seg in segments:
             seg.text, _ = correct(seg.text, vocab)
 
+        status.write("packaging", 0.9)
+        rev = model_revision()
         (job.directory / "transcript.json").write_text(
             json.dumps(
-                to_json(job.meeting_id, job.profile, "he", segments, speakers, diarized),
+                to_json(
+                    job.meeting_id, job.profile, "he", segments, speakers, diarized,
+                    engine=ENGINE, model_revision=rev, biased=biased,
+                ),
                 ensure_ascii=False,
                 indent=2,
             ),
             encoding="utf-8",
         )
         (job.directory / "transcript.txt").write_text(to_text(segments), encoding="utf-8")
+        (job.directory / "metadata.json").write_text(
+            json.dumps(
+                build_metadata(
+                    job,
+                    engine=ENGINE,
+                    model_revision=rev,
+                    language="he",
+                    biased=biased,
+                    vocabulary_terms_used=terms,
+                ),
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
         status.outputs["transcript"] = "transcript.json"
         status.outputs["transcript_txt"] = "transcript.txt"
+        status.outputs["metadata"] = "metadata.json"
 
         # Diarization is MVP-accepted but unverified on a real multi-party *call* (DECISIONS 4c).
         # Log a per-meeting summary so live calls leave a reviewable trail to judge it on later.
