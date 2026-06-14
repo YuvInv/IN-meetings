@@ -16,6 +16,7 @@ struct INMeetingsApp: App {
     @State private var detector: CallDetector
     @State private var recorder: RecordingController
     @State private var models: ModelManager
+    @State private var vadModel: ModelManager
     @State private var promptSettings: MeetingDetectionSettings
     @State private var promptCoordinator: MeetingPromptCoordinator
     @State private var drive: DriveAuth
@@ -28,6 +29,9 @@ struct INMeetingsApp: App {
         let models = ModelManager()
         _models = State(initialValue: models)
         models.ensureReady()   // download + verify the Hebrew model on first launch (Harvest 1)
+        let vadModel = ModelManager(entry: ModelCatalog.sileroVad)
+        _vadModel = State(initialValue: vadModel)
+        vadModel.ensureReady()   // tiny Silero VAD so the pipeline runs --vad (no silence hallucination)
         let settings = MeetingDetectionSettings()
         _promptSettings = State(initialValue: settings)
         let coordinator = MeetingPromptCoordinator(detector: detector, recorder: recorder, settings: settings)

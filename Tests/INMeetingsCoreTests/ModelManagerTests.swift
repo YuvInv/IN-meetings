@@ -40,4 +40,15 @@ final class ModelManagerTests: XCTestCase {
         XCTAssertTrue(url.path.contains("IN Meetings/Models"),
                       "expected the model under Application Support/IN Meetings/Models, got \(url.path)")
     }
+
+    func testVadCatalogEntryIsPinned() {
+        let v = ModelCatalog.sileroVad
+        XCTAssertEqual(v.filename, "ggml-silero-v5.1.2.bin")
+        XCTAssertEqual(v.sizeBytes, 885_098)
+        XCTAssertEqual(v.sha256, "29940d98d42b91fbd05ce489f3ecf7c72f0a42f027e4875919a28fb4c04ea2cf")
+        XCTAssertEqual(v.sha256.count, 64)
+        XCTAssertEqual(v.url.host, "huggingface.co")
+        XCTAssertEqual(ModelManager.installedVadURL.lastPathComponent, "ggml-silero-v5.1.2.bin")
+        XCTAssertTrue(ModelManager.installedVadURL.path.contains("IN Meetings/Models"))
+    }
 }

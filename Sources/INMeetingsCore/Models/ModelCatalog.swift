@@ -34,4 +34,15 @@ public enum ModelCatalog {
         sizeBytes: 1_624_555_275,
         displayName: "ivrit.ai · large-v3-turbo (Hebrew)"
     )
+
+    /// Silero VAD for whisper.cpp — tiny (~865 KB). When installed, the pipeline runs `--vad` so the ASR
+    /// only transcribes detected speech: no hallucinated text on within-track silence (the gaps when the
+    /// remote side isn't talking). Same Hugging Face source the `pipeline/benchmarks` VAD eval pulled from.
+    public static let sileroVad = Entry(
+        filename: "ggml-silero-v5.1.2.bin",
+        url: URL(string: "https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v5.1.2.bin")!,
+        sha256: "29940d98d42b91fbd05ce489f3ecf7c72f0a42f027e4875919a28fb4c04ea2cf",
+        sizeBytes: 885_098,
+        displayName: "Silero VAD (whisper.cpp)"
+    )
 }

@@ -123,6 +123,12 @@ public final class JobBridge {
         if FileManager.default.fileExists(atPath: model.path) {
             env["IN_MEETINGS_MODEL"] = model.path
         }
+        // Silero VAD (also app-managed): when present the pipeline runs whisper with --vad so silent
+        // stretches aren't hallucinated into text. Absent → pipeline falls back to is_silent gating only.
+        let vad = ModelManager.installedVadURL
+        if FileManager.default.fileExists(atPath: vad.path) {
+            env["IN_MEETINGS_VAD_MODEL"] = vad.path
+        }
         process.environment = env
 
         // Capture the pipeline's stdout+stderr into a per-meeting log — the durable trail for

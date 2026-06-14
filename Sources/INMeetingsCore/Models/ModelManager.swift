@@ -70,6 +70,12 @@ public final class ModelManager {
         modelsDirectory.appendingPathComponent(ModelCatalog.hebrewTurbo.filename)
     }
 
+    /// Absolute path of the installed Silero VAD model. `JobBridge` points the pipeline here via
+    /// `IN_MEETINGS_VAD_MODEL` when the file exists (else the pipeline runs without `--vad`).
+    public nonisolated static var installedVadURL: URL {
+        modelsDirectory.appendingPathComponent(ModelCatalog.sileroVad.filename)
+    }
+
     private nonisolated var destination: URL {
         Self.modelsDirectory.appendingPathComponent(entry.filename)
     }
