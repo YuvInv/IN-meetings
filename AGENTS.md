@@ -51,11 +51,15 @@ Hard constraints (from the design brief, non-negotiable):
 
 ## Current Phase
 
-**Phase-0 de-risk prototypes done (P1 ASR, P2 capture, P3 detection — all verified live); MVP next.**
-Design (`RESEARCH.md`, `DESIGN.md` + `adr/ADR-001..011`, `IMPLEMENTATION_PLAN.md`) is approved.
-Active branch: `phase0-prototypes`. **Read `HANDOFF.md` + `DECISIONS.md` before starting.** P4
-(in-person diarization) still pending. Stack: Swift/SwiftUI menu-bar app + Python transcription/
-context/Drive pipeline.
+**MVP spine complete + merged to `main`** (Phase-0 prototypes + Phase-1 MVP + Phase-2 calendar context +
+App-UX slice 1). The app runs end-to-end: detect → dual-track capture → on-device Hebrew transcription
+(post-correction + Silero VAD) → senko diarization → context package → Drive backup → Liquid Glass
+dashboard. **Now executing the "Road to a team-ready v1" roadmap** (`IMPLEMENTATION_PLAN.md` → that
+section): **P0** installable & trustworthy (hybrid Dock + menu-bar app shell, Developer-ID
+sign/notarize/.dmg, launch-at-login, onboarding/TCC wizard, reliability pass) → **P1** value loop + video
+→ **P2** polish. **Read `HANDOFF.md` + `DECISIONS.md` before starting.** P4 (in-person diarization) still
+pending. Stack: Swift/SwiftUI **hybrid Dock + menu-bar** app + Python transcription/context/Drive pipeline
+(pinned 3.11 venv).
 
 ## Architecture
 - Document significant decisions in `DECISIONS.md`; design-phase decisions live in `adr/` and are mirrored as one-liners in `DECISIONS.md`

@@ -1,5 +1,7 @@
 # ADR-006 — Storage, backend & Google Drive sync
 
+> **⚠️ Amended 2026-06-14** (see [DECISIONS.md](../DECISIONS.md)): Drive sync is **Swift-owned** (moved out of the Python pipeline) with a **per-user dynamic backup location** (each user connects their account + picks the Shared Drive). A **Drive folder picker** + a retention/size cap are **P1**.
+
 **Status:** Proposed · **Date:** 2026-06-11 · **Deciders:** Yuval (review)
 **Brief item:** E · **Confirmed:** Drive auth = per-user OAuth (user decision)
 

@@ -1,5 +1,7 @@
 # ADR-001 — Call detection & trigger UX
 
+> **⚠️ Amended 2026-06-15** (see [DECISIONS.md](../DECISIONS.md) + [IMPLEMENTATION_PLAN.md](../IMPLEMENTATION_PLAN.md) "Road to a team-ready v1"): the app is a **hybrid Dock-icon app + menu-bar tray**, not a pure `LSUIElement` agent with no Dock icon. Closing the dashboard keeps the recorder alive; the Dock icon (re)opens it. The detection / prompt-to-record / ring-buffer design below stands.
+
 **Status:** Proposed (revised after P3 prototype) · **Date:** 2026-06-11 · **Deciders:** Yuval (review)
 **Brief item:** A · **Research:** RESEARCH.md §1, §4 · **Empirical:** P3 (`prototypes/p3-detect`)
 

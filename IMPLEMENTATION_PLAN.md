@@ -4,9 +4,65 @@
 unknowns to prototype before committing to the full build. Backed by [`DESIGN.md`](DESIGN.md),
 [`adr/`](adr/), and [`RESEARCH.md`](RESEARCH.md).
 
-> **Gate:** This plan is for review. **No application code until Yuval approves the design.** Phase 0
-> (prototypes) is the first thing to build *after* approval — it de-risks the three make-or-break unknowns
-> before we invest in the full app.
+> **Status (2026-06-15):** Phase-0 prototypes + the MVP spine are **built and merged to `main`**
+> (detect → dual-track capture → on-device Hebrew transcription → diarization → context package →
+> Drive backup → dashboard). The live, ordered priorities are in **"Road to a team-ready v1"**
+> directly below; the original phased plan (§3) is kept as design background, but the new section
+> **supersedes its sequencing**.
+
+## Road to a team-ready v1 — current priorities (2026-06-15)
+
+**Goal:** close the gap between "the spine works" and "a basic, reliable on-device recorder the IN
+Venture team can install and rely on." The four founding goals (Yuval): (1) reliable on-device
+record + transcribe, (2) reliable Hebrew–English transcription, (3) backup recordings, (4) automate
+**meeting → transcription → Claude skill → Saventa CRM**. **Out of scope for v1:** the in-app "AI
+overview" panel — the skill *trigger* into the CRM is in (goal 4); a rich summary surface in the
+dashboard is deferred.
+
+Ordered. Sequencing call (Yuval, 2026-06-15): **video is pulled up into P1** (flagged "BIG"); the
+retention/size cap rides with it. Full rationale in `DECISIONS.md` (2026-06-15).
+
+### P0 — Installable, real, and trustworthy (the adoption gate)
+1. **Hybrid app shell — Dock app + menu-bar tray.** The app must be BOTH a real Mac app (persistent
+   **Dock icon**, opens the **dashboard**) AND a menu-bar **tray** for quick *Record-now* — today it's
+   `LSUIElement=true` (menu-bar only, no Dock icon). → `LSUIElement=false` + keep `MenuBarExtra`; keep
+   the recorder alive when the dashboard window closes (`terminateAfterLastWindowClosed=false`);
+   Dock-click (re)opens the dashboard; launch-at-login comes up **quietly** (background, no window pop).
+   **Amends ADR-001/ADR-009.** (Plumbing mostly exists — "Open Dashboard" window + fronting.)
+2. **Distribution — a real `.dmg`.** Developer-ID signing + notarization + a drag-to-`/Applications`
+   `.dmg` + launch-at-login (`SMAppService`); Sparkle auto-update after. (Also clears the P2 TCC
+   "responsible process" silence gotcha, which needs a Developer-ID-signed app.)
+3. **Onboarding / TCC permission wizard.** First-run walk-through for Microphone + System-Audio-
+   Recording + Google sign-in (structured to add Screen-Recording when video lands). Without it,
+   non-dev teammates hit a wall of scary prompts. (ADR-009)
+4. **Reliability pass (goal 1).** Bundle the Silero VAD model in the app + verify the partial-silence
+   fix live; verify multi-party (3+) diarization on a real call; **surface pipeline failures** in the
+   dashboard (today a failed transcription is invisible).
+
+### P1 — Close the value loop + video (video pulled up)
+5. **Company naming (gap #2).** Add title/transcript fallbacks to the calendar-domain inference; add an
+   **edit/rename UI** that persists (new `MeetingStore.updateCompany`), wired to the "Needs linking"
+   bucket so "Unknown company" is always fixable.
+6. **Claude auto-trigger → Saventa CRM (gap #4 / goal 4).** Headless `claude -p` chain
+   (`saventa-summary` / `process-meeting`) over the package, **one-click default**; the coordinated
+   **`--package`** input mode in `~/repos/claude-skills` (ADR-005 part 2); write run-state back to the
+   index. Trigger + status only — no rich in-app summary panel. (ADR-008)
+7. **Video (gap #5, BIG — pulled up).** ScreenCaptureKit **window-only** HEVC capture (on by default for
+   the `call` profile, per the 2026-06-14 decision) → mux into `meeting.mp4` via the existing
+   `PlaybackRenderer` → Drive upload → dashboard video playback. Adds the **Screen-Recording** grant to
+   onboarding; revisit consent (ADR-010).
+8. **Retention / storage cap (rides with video).** Prune raw WAVs once the merged artifact exists + is
+   uploaded; cap the local cache (ADR-010) — video makes storage GB-scale per meeting.
+9. **Drive folder picker (gap #1).** Browse the selected Shared Drive (Drive API `files.list` tree) and
+   pick/confirm the backup destination, beyond today's auto-created "IN Meetings" folder.
+
+### P2 — Polish & robustness extras
+Ring-buffer pre-roll (nothing lost before *Record*); auto-stop prompt ("meeting ended — stop &
+process?", decided 2026-06-14); speaker naming (Speaker N → attendee names); trash/delete + export-SRT +
+open-in-Drive button; mic-device picker + hotkey rebind + storage/consent settings; fuzzy/edit-distance
+post-correction; tighten Drive scope to `drive.file`.
+
+Verification discipline (§4) is unchanged — each item verified on a real meeting before the next.
 
 ---
 

@@ -1,5 +1,7 @@
 # ADR-004 — Pre-transcription context assembler (the differentiator)
 
+> **⚠️ Also amended 2026-06-15** (see [DECISIONS.md](../DECISIONS.md)): **Saventa + Dealigence enrichment is deferred to Phase 6** — the live MVP/P1 context layer is **Google Calendar only** (domain-derived company, `matched:false`). Company-name *inference fallback + an edit/rename UI* are **P1**.
+
 **Status:** Proposed · **Date:** 2026-06-11 · **Deciders:** Yuval (review)
 **Brief item:** C · **Research:** RESEARCH.md §3.4 (biasing), §0 (strategic bet)
 

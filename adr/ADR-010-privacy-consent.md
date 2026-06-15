@@ -1,5 +1,7 @@
 # ADR-010 — Privacy & consent posture
 
+> **⚠️ Amended 2026-06-14** (see [DECISIONS.md](../DECISIONS.md)): **call video ON by default** materially changes this posture — every call is filmed, so revisit consent/retention defaults + the do-not-record list (**counsel review required before rollout**). A retention/size cap ships with video in **P1**.
+
 **Status:** Proposed · **Date:** 2026-06-11 · **Deciders:** Yuval (review) + **counsel (required)**
 **Brief item:** Phase-1 consent research, Phase-2 privacy · **Research:** RESEARCH.md §5
 

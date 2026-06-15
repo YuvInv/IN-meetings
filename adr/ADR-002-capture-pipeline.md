@@ -1,5 +1,7 @@
 # ADR-002 — Capture pipeline (dual-track, no driver)
 
+> **⚠️ Amended 2026-06-14** (see [DECISIONS.md](../DECISIONS.md)): **call video is ON by default** (ScreenCaptureKit window-only, HEVC) — not "off by default" — and is a **P1** deliverable (adds the Screen-Recording grant + a retention/size cap). The dual-track audio capture design below stands.
+
 **Status:** Proposed · **Date:** 2026-06-11 · **Deciders:** Yuval (review)
 **Brief item:** B · **Research:** RESEARCH.md §1 (capture mechanism), §4
 
