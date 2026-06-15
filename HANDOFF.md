@@ -9,7 +9,7 @@ Keep it short: last state, next steps, gotchas. History lives in git log.
 Claude Code · 2026-06-14
 
 ## Current State
-**MVP Phase 1 spine + Drive sync merged; Phase 2 slice 1 (calendar context) LIVE-VERIFIED — PR open.**
+**Phase 2 (calendar context) merged to `main` via PR #6 — but the merge predated the VAD + scope-defer commits (see ⚠️ in Next). App UX slice 1 (dashboard + settings + merged audio) built on `feat/app-ux-dashboard`, pending live-verify.**
 - Slices **1–5 + H0/H1/H3** and **slice 6 (Drive sync, PR #5)** are merged to `main`.
 - **Phase 2 slice 1 — calendar context assembler — is LIVE-VERIFIED (2026-06-14)** on branch
   `feat/phase2-calendar-context` (DECISIONS 2026-06-14, amends ADR-004). **Python 45 tests + Swift 48 tests +
@@ -25,18 +25,23 @@ Claude Code · 2026-06-14
   - **Two live-test bugs fixed + committed**: silence-gating (`asr.is_silent`) and calendar error surfacing.
 
 ## Next — START HERE
-- **Merge the open PR** (`feat/phase2-calendar-context` → `main`) when ready (it now also carries the
-  scope-defer + ASR-robustness work).
-- **✅ VAD robustness DONE (2026-06-14):** ASR runs whisper `--vad` (Silero, app-provisioned via a second
-  `ModelManager(entry:.sileroVad)` + `IN_MEETINGS_VAD_MODEL`) when present; gated so it degrades to
-  `is_silent` otherwise. Validated on benchmarks (0 hallucination on the silent track; P1 proper nouns
-  preserved). Committed.
-- **→ NOW: app UX** — mila-like, **Liquid Glass** (macOS 26) dashboard + detail + settings + the "Record
-  now" overlay, with the **menu-bar icon complementing it** (Yuval's direction 2026-06-14). This is the
-  H3/H4 harvest (DECISIONS 2026-06-14 mila eval) + the [[ux-liquid-glass]] standard. **Brainstorm scope first.**
+- **⚠️ `main` is missing the VAD + scope-defer commits.** PR #6 merged just *before* they landed, so `main`
+  has Fix A (`is_silent`) but NOT the Silero-VAD app work (`ModelCatalog.sileroVad`, `vadModel`,
+  `IN_MEETINGS_VAD_MODEL`) nor the Phase-6 deferral docs. They live on `feat/phase2-calendar-context`
+  (tip `41b8b46`) and are carried forward by **`feat/app-ux-dashboard`** (based on it). So the **app-UX PR
+  will bring VAD + scope-defer + the dashboard to main together** — or land a quick VAD PR first to separate them.
+- **✅ App UX slice 1 DONE (2026-06-14) on `feat/app-ux-dashboard`** — merged playback `audio.m4a` (rendered
+  at Stop, concurrent with the pipeline; Drive uploads it) + **mila-faithful Liquid Glass dashboard**
+  (`NavigationSplitView` sidebar [All / Needs linking / Processing] + date-bucketed list + RTL detail with
+  tap-to-seek + AVKit player) + in-memory search + **tabbed Settings** (Recording / Model / Drive).
+  **57 Swift tests + `make build-mac` green.** ⏳ **LIVE-VERIFY (needs you):** `make run-mac` → menu **Open
+  Dashboard**; record a call → `audio.m4a` plays, tap-a-line seeks, Hebrew renders RTL; the 3 settings tabs
+  work; Drive gets `audio.m4a`. Then push + open the PR.
+- **Then → remaining app UX** (deferred from slice 1): company **folders** + drag-drop, **trash**, the **AI
+  overview** (Phase-3 skills), re-transcribe / export-SRT, more settings tabs (Audio / Storage / Updates),
+  **video** capture (V1) + `meeting.mp4` playback, and a retention/size cap now that `audio.m4a` is the kept artifact.
 - **Saventa + Dealigence are OUT of the MVP → Phase 6** (deferred 2026-06-14): authoritative company name +
-  founder priors, post-rollout. Until then `company.matched:false` (domain-derived) + best-effort
-  transliteration.
+  founder priors, post-rollout. Until then `company.matched:false` (domain-derived) + best-effort transliteration.
 
 ## Gotchas (verified)
 - **The Google Calendar API must be enabled in the OAuth client's GCP project (1062382667236).** Enabled

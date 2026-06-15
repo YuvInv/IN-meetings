@@ -25,6 +25,12 @@ See also [`NOTICE`](NOTICE) and [`licenses/`](licenses/).
     meeting-prompt overlay (Harvest 3). Re-skinned in macOS 26 Liquid Glass; driven by our Core Audio
     `CallDetector` (app-agnostic, no Screen Recording) instead of Mila's Zoom-only window-title poll;
     `@Observable`/`@MainActor` rewrite; global snooze keyed on the detector's friendly app name.
+  - `Apps/INMeetings/INMeetings/Dashboard/*` and `Apps/INMeetings/INMeetings/Settings/*` — the dashboard +
+    settings UX (Harvest 4): a `NavigationSplitView` (sidebar + date-bucketed meeting list + a detail pane
+    with an RTL Hebrew transcript, tap-a-line-to-seek, and an AVKit player) and a tabbed Settings scene.
+    Rebuilt against our context-package / SQLite index (`MeetingRecord`, `TranscriptPackage`) instead of
+    Mila's `Recording`/`RecordingStore`, re-skinned in macOS 26 Liquid Glass, English chrome, `@Observable`
+    model. The date-bucketing, in-memory search filter, and the transcript seek-row are the closest adaptations.
   - _Planned (later harvests, this file will be updated as they land):_ in-place
     update relocation (`BundleRelocator`) and `scripts/make-dmg.sh`.
 
