@@ -1,5 +1,7 @@
 # ADR-003 — Transcription engine, biasing, diarization
 
+> **⚠️ Also amended 2026-06-14** (see [DECISIONS.md](../DECISIONS.md)): added whisper.cpp **Silero `--vad`** (+ `asr.is_silent`) to stop within-track silence hallucination; diarizer settled on **senko** (bake-off-validated on Hebrew). Bundling VAD in-app + verifying multi-party diarization on a real call is a **P0** reliability item.
+
 **Status:** Proposed (updated by P1 prototype) · **Date:** 2026-06-11 · **Deciders:** Yuval (review)
 **Brief item:** D · **Research:** RESEARCH.md §3 (the crux) · **Empirical:** `pipeline/benchmarks/P1-FINDINGS.md`
 

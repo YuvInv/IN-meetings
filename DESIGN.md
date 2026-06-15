@@ -5,13 +5,23 @@ Phase-2 deliverable. Every decision below has a dedicated ADR in [`adr/`](adr/) 
 tradeoffs; this document is the spine that ties them together. Research backing is in
 [`RESEARCH.md`](RESEARCH.md).
 
-> **Status:** Proposed — awaiting Yuval's review. No application code until approved.
+> **Status (updated 2026-06-15):** ✅ **Built and shipping** — Phase-0 + the MVP spine are merged to `main`
+> and the app runs end-to-end (detect → dual-track capture → on-device Hebrew transcription → diarization →
+> context package → Drive backup → dashboard). This document is the **original design spine**; several
+> decisions have since evolved (recorded in [`DECISIONS.md`](DECISIONS.md) and the per-ADR "Amended"
+> banners). **Live, ordered priorities:** [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md) → "Road to a
+> team-ready v1". Key deltas vs. the text below: **(1)** the app is a **hybrid Dock-icon app + menu-bar
+> tray**, not a pure `LSUIElement` agent (amends ADR-001/009); **(2)** **call video is ON by default**
+> (ScreenCaptureKit window-only, HEVC) and is a **P1** item, not "off by default" (amends ADR-002);
+> **(3)** **Saventa + Dealigence context is deferred to Phase 6** — the live context layer is **Google
+> Calendar only** (amends ADR-004); **(4)** the Claude→CRM auto-trigger is in scope (**P1**) but an in-app
+> **"AI overview" panel is out of scope for v1**.
 
 ---
 
 ## 1. What we're building (one paragraph)
 
-A menu-bar macOS app that silently detects when you're in a meeting (Zoom, Google Meet, Teams, Slack
+A macOS app (a hybrid Dock-icon app + menu-bar tray) that silently detects when you're in a meeting (Zoom, Google Meet, Teams, Slack
 huddles, generic calls), records **mic and remote audio as two separate tracks** locally — no bot, no
 virtual driver, invisible to other participants — and, *before* transcribing, assembles context about
 who's in the room (Google Calendar) and what we know about them (Saventa CRM + Dealigence). That
@@ -129,4 +139,5 @@ are in [ADR-005](adr/ADR-005-context-package-contract.md) and
 Live/streaming transcription (batch post-meeting is enough for v1; ONNX path noted for later); per-name
 diarization of remote speakers beyond what calendar + 2-track gives; sentiment/engagement analytics;
 audio clip sharing; Windows/Linux; App Store distribution (internal signing only — lets us use the
-private TCC SPI for the audio-permission check).
+private TCC SPI for the audio-permission check). Also out of scope for v1: an **in-app "AI overview" panel** —
+the Claude→CRM auto-trigger (P1) writes the summary to Saventa rather than rendering it in the app.

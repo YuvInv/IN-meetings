@@ -1,5 +1,7 @@
 # ADR-009 — App architecture, language split & IPC
 
+> **⚠️ Amended 2026-06-14/15** (see [DECISIONS.md](../DECISIONS.md)): the app is a **hybrid Dock + menu-bar** shell (amends the `LSUIElement`-only lifecycle) and **Drive sync is Swift-owned** (not under the Python pipeline). **Developer-ID sign/notarize/.dmg + launch-at-login + onboarding/TCC wizard are P0.** The file-based job-queue IPC + bundled-Python plan stand.
+
 **Status:** Proposed · **Date:** 2026-06-11 · **Deciders:** Yuval (review)
 **Brief item:** Phase 3 (stack & communication) · **Research:** RESEARCH.md §4
 

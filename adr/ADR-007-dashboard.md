@@ -1,5 +1,7 @@
 # ADR-007 — Dashboard
 
+> **⚠️ Amended 2026-06-15** (see [DECISIONS.md](../DECISIONS.md)): the dashboard is built in **Liquid Glass** (macOS 26), not "standard SwiftUI / materials". An in-app **"AI overview" panel is out of scope for v1** (the Claude→CRM auto-trigger lives in [ADR-008](ADR-008-claude-auto-trigger.md), **P1**); folders / trash / export / speaker-naming are **P2**.
+
 **Status:** Proposed · **Date:** 2026-06-11 · **Deciders:** Yuval (review)
 **Brief item:** E (dashboard) · **Aesthetic:** clean, minimal, no clutter
 
