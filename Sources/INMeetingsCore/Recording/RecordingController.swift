@@ -27,20 +27,26 @@ public final class RecordingController {
     public private(set) var lastRecordingDir: URL?
 
     private let detector: CallDetector
+    private let captureSettings: CaptureSettings
     private var hotKey: GlobalHotKey?
     private var tick: Timer?
     private var session: CaptureSession?
-    /// Bundle id of the call app detected when this recording started (call profile) → metadata.json.
+    /// Friendly name of the call app detected when this recording started (call profile) → metadata.json.
     private var recordingSourceApp: String?
+    /// Bundle id of the call app to film window-only video (nil = audio only) — captured at Start.
+    private var recordingVideoBundleID: String?
 
     /// Runs the Python transcription pipeline for each finished recording (ADR-009).
     public let jobBridge = JobBridge()
 
     /// - Parameters:
     ///   - detector: source of the call-vs-no-call signal for profile auto-pick.
+    ///   - captureSettings: video on/off + retention prefs (V1 video slice).
     ///   - installHotKey: register the global ⌃⌥⌘R toggle (false in tests, to avoid side effects).
-    public init(detector: CallDetector, installHotKey: Bool = true) {
+    public init(detector: CallDetector, captureSettings: CaptureSettings? = nil,
+                installHotKey: Bool = true) {
         self.detector = detector
+        self.captureSettings = captureSettings ?? CaptureSettings()
         if installHotKey {
             hotKey = GlobalHotKey { [weak self] in self?.toggle() }
         }
@@ -72,15 +78,23 @@ public final class RecordingController {
         lastError = nil
         let profile = pendingProfile
         recordingSourceApp = profile == .call ? detector.state.callApps.first : nil
+        // Film the call window only for a call, only when the user left video on, and only if we know
+        // which app hosts the call (the SCK content filter needs a bundle id).
+        recordingVideoBundleID = (profile == .call && captureSettings.recordCallVideo)
+            ? detector.state.callAppBundleIDs.first : nil
 
         guard await Permissions.requestMicrophone() else {
             lastError = "Microphone access is required. Enable IN Meetings in System Settings ▸ Privacy & Security ▸ Microphone."
             return
         }
+        // Provoke the Screen-Recording prompt up front (best-effort) so the user can grant it; the grant
+        // takes effect on a later run, and capture degrades to audio-only until then.
+        if recordingVideoBundleID != nil { Permissions.requestScreenRecording() }
 
-        let session = CaptureSession(profile: profile, directory: RecordingsStore.newMeetingDirectory())
+        let session = CaptureSession(profile: profile, directory: RecordingsStore.newMeetingDirectory(),
+                                     videoBundleID: recordingVideoBundleID)
         do {
-            try session.start()
+            try await session.start()
         } catch {
             lastError = (error as? CaptureError)?.description ?? error.localizedDescription
             return
@@ -104,35 +118,46 @@ public final class RecordingController {
             if case let .recording(_, since) = state { return since }
             return Date()
         }()
+        let endedAt = Date()
         tick?.invalidate()
         tick = nil
-        let result = session?.stop()
-        session = nil
+        let session = self.session
+        self.session = nil
         elapsed = 0
         state = .idle
-
-        if let result {
-            lastRecordingDir = result.directory
-            let sys = result.systemPeakDB.map { String(format: "sys %.0f dB", $0) } ?? "mic-only"
-            lastDiagnostic = "Last: " + String(format: "mic %.0f dB", result.micPeakDB) + " · " + sys
-            captureLog.notice("recording.done profile=\(result.profile.rawValue, privacy: .public) micPeak=\(result.micPeakDB, privacy: .public)dB sysPeak=\(result.systemPeakDB ?? -120, privacy: .public)dB")
-
-            if result.profile == .call && result.systemCapturedSilence {
-                lastError = "System-audio track was silent — make sure audio is playing, and that IN Meetings has 'System Audio Recording' in System Settings (a relaunch after granting may be needed)."
-            }
-            // Hand the recording to the transcription pipeline (ADR-009); record-time facts feed metadata.json.
-            jobBridge.enqueue(result, startedAt: startedAt, endedAt: Date(), captureSourceApp: recordingSourceApp)
-            // Render the single merged playback file alongside transcription (it needs only the raw
-            // tracks). Best-effort: a failure leaves no audio.m4a and the dashboard degrades.
-            let dir = result.directory
-            let tracks = [result.mic, result.system].compactMap { $0 }
-            if !tracks.isEmpty {
-                Task.detached {
-                    try? await PlaybackRenderer().render(tracks: tracks,
-                                                         to: dir.appendingPathComponent(PlaybackRenderer.outputName))
-                }
-            }
-            RecordingsStore.reveal(result.directory)
+        guard let session else { return }
+        // Stopping is async now (the video writer is finalized) — do it off the synchronous toggle, then
+        // hand the result to the pipeline + renderer on the main actor.
+        Task { @MainActor in
+            let result = await session.stop()
+            self.finish(result, startedAt: startedAt, endedAt: endedAt)
         }
+    }
+
+    private func finish(_ result: CaptureSession.Result, startedAt: Date, endedAt: Date) {
+        lastRecordingDir = result.directory
+        let sys = result.systemPeakDB.map { String(format: "sys %.0f dB", $0) } ?? "mic-only"
+        lastDiagnostic = "Last: " + String(format: "mic %.0f dB", result.micPeakDB) + " · " + sys
+        captureLog.notice("recording.done profile=\(result.profile.rawValue, privacy: .public) micPeak=\(result.micPeakDB, privacy: .public)dB sysPeak=\(result.systemPeakDB ?? -120, privacy: .public)dB video=\(result.video != nil, privacy: .public)")
+
+        if result.profile == .call && result.systemCapturedSilence {
+            lastError = "System-audio track was silent — make sure audio is playing, and that IN Meetings has 'System Audio Recording' in System Settings (a relaunch after granting may be needed)."
+        }
+        // Hand the recording to the transcription pipeline (ADR-009); record-time facts feed metadata.json.
+        jobBridge.enqueue(result, startedAt: startedAt, endedAt: endedAt, captureSourceApp: recordingSourceApp)
+        // Render the single merged playback file alongside transcription (it needs only the raw tracks).
+        // With a call video → `meeting.mp4` (window video + level-balanced audio); audio-only → `audio.m4a`.
+        // Best-effort: a failure leaves the dashboard/Drive to fall back to the raw tracks.
+        let dir = result.directory
+        let tracks = [result.mic, result.system].compactMap { $0 }
+        let video = result.video
+        if !tracks.isEmpty {
+            Task.detached {
+                let name = video != nil ? PlaybackRenderer.videoOutputName : PlaybackRenderer.outputName
+                try? await PlaybackRenderer().render(tracks: tracks, video: video,
+                                                     to: dir.appendingPathComponent(name))
+            }
+        }
+        RecordingsStore.reveal(result.directory)
     }
 }

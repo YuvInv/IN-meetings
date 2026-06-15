@@ -11,6 +11,9 @@ public enum CaptureError: Error, CustomStringConvertible {
     case ioProcFailed(OSStatus)
     case fileOpenFailed(URL, Error)
     case micEngineFailed(Error)
+    case screenRecordingDenied
+    case callWindowNotFound(String)
+    case videoWriterFailed(Error?)
 
     public var description: String {
         switch self {
@@ -22,6 +25,10 @@ public enum CaptureError: Error, CustomStringConvertible {
         case .ioProcFailed(let s): return "Could not start the system-audio stream (OSStatus \(s))."
         case .fileOpenFailed(let url, let e): return "Could not open \(url.lastPathComponent): \(e.localizedDescription)."
         case .micEngineFailed(let e): return "Microphone capture failed: \(e.localizedDescription)."
+        case .screenRecordingDenied:
+            return "Screen Recording permission is required to record the call video."
+        case .callWindowNotFound(let id): return "No on-screen window found for the call app (\(id))."
+        case .videoWriterFailed(let e): return "Could not start the video writer: \(e?.localizedDescription ?? "unknown")."
         }
     }
 }

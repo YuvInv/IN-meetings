@@ -52,9 +52,15 @@ final class RecordingStore {
     func transcript(for r: MeetingRecord) -> TranscriptPackage? {
         try? PackageReader.transcript(in: URL(fileURLWithPath: r.folderPath))
     }
-    func audioURL(for r: MeetingRecord) -> URL? {
-        let u = URL(fileURLWithPath: r.folderPath).appendingPathComponent(PlaybackRenderer.outputName)
-        return FileManager.default.fileExists(atPath: u.path) ? u : nil
+    /// The merged playback file for a meeting: the muxed video (`meeting.mp4`) if present, else the mixed
+    /// audio (`audio.m4a`). nil until the renderer has produced one.
+    func playbackURL(for r: MeetingRecord) -> URL? {
+        let folder = URL(fileURLWithPath: r.folderPath)
+        for name in [PlaybackRenderer.videoOutputName, PlaybackRenderer.outputName] {
+            let u = folder.appendingPathComponent(name)
+            if FileManager.default.fileExists(atPath: u.path) { return u }
+        }
+        return nil
     }
 }
 

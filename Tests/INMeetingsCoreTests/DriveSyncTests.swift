@@ -93,7 +93,57 @@ final class DriveSyncTests: XCTestCase {
         try Data("b".utf8).write(to: dir.appendingPathComponent("system.wav"))
         XCTAssertEqual(DriveSync.mediaFileNames(in: dir), ["mic.wav", "system.wav"])   // no merged yet
         try Data("c".utf8).write(to: dir.appendingPathComponent("audio.m4a"))
-        XCTAssertEqual(DriveSync.mediaFileNames(in: dir), ["audio.m4a"])               // prefer merged
+        XCTAssertEqual(DriveSync.mediaFileNames(in: dir), ["audio.m4a"])               // prefer mixed audio
+        try Data("d".utf8).write(to: dir.appendingPathComponent("meeting.mp4"))
+        XCTAssertEqual(DriveSync.mediaFileNames(in: dir), ["meeting.mp4"])             // video call: muxed file wins
+    }
+
+    func testMediaSelectionFallsBackToRawTracksPlusVideo() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try Data("a".utf8).write(to: dir.appendingPathComponent("mic.wav"))
+        try Data("v".utf8).write(to: dir.appendingPathComponent("video.mov"))
+        // mux hasn't run (no meeting.mp4/audio.m4a): upload the raw tracks + raw video so nothing is lost
+        XCTAssertEqual(DriveSync.mediaFileNames(in: dir), ["mic.wav", "video.mov"])
+    }
+
+    func testPrunesRawTracksAfterBackupWhenMergedExists() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let defaults = UserDefaults(suiteName: "prune-\(UUID().uuidString)")!
+        for n in ["mic.wav", "system.wav", "video.mov", "meeting.mp4"] {
+            try Data("x".utf8).write(to: dir.appendingPathComponent(n))
+        }
+        DriveSync.pruneRawTracksIfEnabled(in: dir, defaults: defaults)   // default ON
+        let fm = FileManager.default
+        XCTAssertFalse(fm.fileExists(atPath: dir.appendingPathComponent("mic.wav").path))
+        XCTAssertFalse(fm.fileExists(atPath: dir.appendingPathComponent("system.wav").path))
+        XCTAssertFalse(fm.fileExists(atPath: dir.appendingPathComponent("video.mov").path))
+        XCTAssertTrue(fm.fileExists(atPath: dir.appendingPathComponent("meeting.mp4").path))   // merged kept
+    }
+
+    func testPruneIsNoOpWithoutAMergedFileOrWhenDisabled() throws {
+        let fm = FileManager.default
+        func freshDir() throws -> URL {
+            let d = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            try fm.createDirectory(at: d, withIntermediateDirectories: true)
+            try Data("x".utf8).write(to: d.appendingPathComponent("mic.wav"))
+            return d
+        }
+        // No merged file → never prune (don't leave the user with nothing to play).
+        let noMerged = try freshDir(); defer { try? fm.removeItem(at: noMerged) }
+        DriveSync.pruneRawTracksIfEnabled(in: noMerged, defaults: UserDefaults(suiteName: "p1-\(UUID().uuidString)")!)
+        XCTAssertTrue(fm.fileExists(atPath: noMerged.appendingPathComponent("mic.wav").path))
+
+        // Setting off → keep raw tracks even with a merged file present.
+        let disabled = try freshDir(); defer { try? fm.removeItem(at: disabled) }
+        try Data("m".utf8).write(to: disabled.appendingPathComponent("audio.m4a"))
+        let off = UserDefaults(suiteName: "p2-\(UUID().uuidString)")!
+        off.set(false, forKey: CaptureSettings.Keys.pruneRawTracksAfterBackup)
+        DriveSync.pruneRawTracksIfEnabled(in: disabled, defaults: off)
+        XCTAssertTrue(fm.fileExists(atPath: disabled.appendingPathComponent("mic.wav").path))
     }
 
     func testSyncIsIdempotentOnceSynced() async throws {

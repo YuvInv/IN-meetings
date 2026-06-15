@@ -104,6 +104,7 @@ public final class JobBridge {
             "started_at": iso.string(from: startedAt),
             "ended_at": iso.string(from: endedAt),
             "created_at": iso.string(from: endedAt),
+            "video": result.video != nil,   // a call-window video.mov was captured (V1) → metadata.json
         ]
         if let captureSourceApp { job["capture_source_app"] = captureSourceApp }
         return job

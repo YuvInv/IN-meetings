@@ -19,13 +19,16 @@ struct INMeetingsApp: App {
     @State private var models: ModelManager
     @State private var vadModel: ModelManager
     @State private var promptSettings: MeetingDetectionSettings
+    @State private var captureSettings: CaptureSettings
     @State private var promptCoordinator: MeetingPromptCoordinator
     @State private var drive: DriveAuth
 
     init() {
         let detector = CallDetector()
         _detector = State(initialValue: detector)
-        let recorder = RecordingController(detector: detector)
+        let captureSettings = CaptureSettings()
+        _captureSettings = State(initialValue: captureSettings)
+        let recorder = RecordingController(detector: detector, captureSettings: captureSettings)
         _recorder = State(initialValue: recorder)
         let models = ModelManager()
         _models = State(initialValue: models)
@@ -56,7 +59,8 @@ struct INMeetingsApp: App {
         .windowResizability(.contentSize)
 
         Settings {
-            AppSettingsView(settings: promptSettings, models: models, vadModels: vadModel, drive: drive)
+            AppSettingsView(settings: promptSettings, models: models, vadModels: vadModel,
+                            drive: drive, capture: captureSettings)
         }
     }
 }

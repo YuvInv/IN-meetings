@@ -11,6 +11,7 @@ struct MeetingDetailView: View {
     @State private var player: AVPlayer?
     @State private var currentTime: Double = 0
     @State private var observer: Any?
+    @State private var isVideo = false
     @State private var isEditingCompany = false
     @State private var draftCompany = ""
     private var pkg: TranscriptPackage? { store.transcript(for: meeting) }
@@ -18,8 +19,14 @@ struct MeetingDetailView: View {
     var body: some View {
         VStack(spacing: 0) {
             header; Divider()
+            if isVideo, let player {
+                VideoPlayer(player: player)
+                    .frame(height: 260)
+                    .background(.black)
+                Divider()
+            }
             transcriptArea.frame(maxWidth: .infinity, maxHeight: .infinity)
-            if player != nil { Divider(); playbackBar }
+            if !isVideo, player != nil { Divider(); playbackBar }
         }
         .onAppear(perform: configure).onDisappear(perform: teardown)
     }
@@ -92,7 +99,8 @@ struct MeetingDetailView: View {
     }
     private func configure() {
         teardown()
-        guard let url = store.audioURL(for: meeting) else { return }
+        guard let url = store.playbackURL(for: meeting) else { return }
+        isVideo = ["mp4", "mov"].contains(url.pathExtension.lowercased())
         let p = AVPlayer(url: url)
         observer = p.addPeriodicTimeObserver(forInterval: CMTime(value: 1, timescale: 30), queue: .main) {
             currentTime = $0.seconds.isFinite ? $0.seconds : 0
