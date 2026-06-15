@@ -40,7 +40,7 @@ gen: ## Force xcodegen regeneration
 .PHONY: build-mac
 build-mac: $(PROJECT_PBXPROJ) ## Build the macOS app
 	@printf "$(GREEN)[build]$(NC) Building $(APP_NAME)...\n"
-	@xcodebuild -project $(PROJECT) \
+	@set -o pipefail; xcodebuild -project $(PROJECT) \
 		-scheme $(SCHEME) \
 		-destination 'platform=macOS' \
 		-configuration $(CONFIGURATION) \

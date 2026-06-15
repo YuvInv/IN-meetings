@@ -75,8 +75,11 @@ private struct MenuContent: View {
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
-        Button("Open Dashboard") { openWindow(id: "dashboard") }
-            .keyboardShortcut("d")
+        Button("Open Dashboard") {
+            NSApp.activate(ignoringOtherApps: true)   // LSUIElement menu-bar app: bring the window forward
+            openWindow(id: "dashboard")
+        }
+        .keyboardShortcut("d")
         Divider()
 
         switch recorder.state {
