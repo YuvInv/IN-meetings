@@ -20,9 +20,8 @@ struct MeetingDetailView: View {
         VStack(spacing: 0) {
             header; Divider()
             if isVideo, let player {
-                VideoPlayer(player: player)
+                PlayerView(player: player)
                     .frame(height: 260)
-                    .background(.black)
                 Divider()
             }
             transcriptArea.frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -120,5 +119,24 @@ struct MeetingDetailView: View {
     private func commitCompany() {
         isEditingCompany = false
         store.setCompany(draftCompany, for: meeting)
+    }
+}
+
+/// AVKit's AppKit player view wrapped for SwiftUI. We use this instead of SwiftUI's `VideoPlayer`: on this
+/// macOS/SDK, realizing `VideoPlayer` aborts the Swift runtime while instantiating `_AVKit_SwiftUI` generic
+/// metadata (observed: `getSuperclassMetadata` → `fatalError`, repro'd 3× on opening a video meeting).
+/// `AVPlayerView` is a plain `NSView`, so wrapping it ourselves (like the Drive picker's WKWebView) avoids
+/// that path entirely — and gives native transport controls for free.
+private struct PlayerView: NSViewRepresentable {
+    let player: AVPlayer
+    func makeNSView(context: Context) -> AVPlayerView {
+        let view = AVPlayerView()
+        view.player = player
+        view.controlsStyle = .inline
+        view.videoGravity = .resizeAspect
+        return view
+    }
+    func updateNSView(_ nsView: AVPlayerView, context: Context) {
+        if nsView.player !== player { nsView.player = player }
     }
 }
