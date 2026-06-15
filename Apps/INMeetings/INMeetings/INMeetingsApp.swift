@@ -13,6 +13,7 @@ import INMeetingsCore
 /// Google account + backup location so finished meetings sync to Drive (slice 6).
 @main
 struct INMeetingsApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var detector: CallDetector
     @State private var recorder: RecordingController
     @State private var models: ModelManager
@@ -45,12 +46,7 @@ struct INMeetingsApp: App {
             MenuContent(detector: detector, recorder: recorder, models: models,
                         settings: promptSettings, coordinator: promptCoordinator, drive: drive)
         } label: {
-            if recorder.isRecording {
-                Text("🔴 \(recorder.elapsedString)")
-                    .monospacedDigit()
-            } else {
-                Image(systemName: detector.state.status == .armed ? "waveform.badge.mic" : "waveform")
-            }
+            MenuBarLabel(detector: detector, recorder: recorder)
         }
         .menuBarExtraStyle(.menu)
 
@@ -76,7 +72,7 @@ private struct MenuContent: View {
 
     var body: some View {
         Button("Open Dashboard") {
-            NSApp.activate(ignoringOtherApps: true)   // LSUIElement menu-bar app: bring the window forward
+            NSApp.activate(ignoringOtherApps: true)   // hybrid Dock + menu-bar app: bring the dashboard forward
             openWindow(id: "dashboard")
         }
         .keyboardShortcut("d")
@@ -187,6 +183,63 @@ private struct MenuContent: View {
                 Button("Refresh drives") { Task { await drive.refreshSharedDrives() } }
             }
             Button("Disconnect Drive") { drive.disconnect() }
+        }
+    }
+}
+
+/// Bridges AppKit lifecycle callbacks (Dock-icon clicks, last-window-closed) to SwiftUI's `openWindow`
+/// action, which `NSApplicationDelegate` cannot reach (it has no SwiftUI environment). The closure is
+/// installed by `MenuBarLabel` — the one SwiftUI view that is always present (the menu-bar status item).
+@MainActor
+final class DashboardLauncher {
+    static let shared = DashboardLauncher()
+    /// Set once by `MenuBarLabel.onAppear`; calls `openWindow(id: "dashboard")`.
+    var open: (() -> Void)?
+    private init() {}
+}
+
+/// Hybrid Dock + menu-bar lifecycle. The app is a regular, Dock-visible app (`LSUIElement=false`) that
+/// also lives in the menu bar: closing the dashboard must NOT quit the recorder, and clicking the Dock
+/// icon (re)opens the dashboard. Amends ADR-001/ADR-009 (was a pure `LSUIElement` menu-bar agent).
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    /// Keep the recorder + menu-bar item alive when the dashboard window is closed.
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+
+    /// Dock-icon click with no visible window → bring the app forward and (re)open the dashboard.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag {
+            NSApp.activate(ignoringOtherApps: true)
+            DashboardLauncher.shared.open?()
+        }
+        return true
+    }
+
+    /// Open the dashboard on launch so it feels like a real app. (P0 #2 / launch-at-login will gate this
+    /// so a *login-item* start stays quiet in the background instead of popping the window.)
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        DispatchQueue.main.async { DashboardLauncher.shared.open?() }
+    }
+}
+
+/// The menu-bar status item: draws the icon/timer AND installs the `DashboardLauncher` closure. It is the
+/// only always-present SwiftUI view in this app, so its environment is where we capture `openWindow`.
+private struct MenuBarLabel: View {
+    var detector: CallDetector
+    var recorder: RecordingController
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        Group {
+            if recorder.isRecording {
+                Text("🔴 \(recorder.elapsedString)")
+                    .monospacedDigit()
+            } else {
+                Image("MenuBarIcon")
+                    .renderingMode(.original)
+            }
+        }
+        .onAppear {
+            DashboardLauncher.shared.open = { openWindow(id: "dashboard") }
         }
     }
 }
