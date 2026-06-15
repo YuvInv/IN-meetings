@@ -81,7 +81,8 @@ def build_metadata(
     )
     company = (
         context.company if (context and context.company)
-        else {"name": None, "sevanta_deal_id": None, "dealigence_id": None, "matched": False}
+        else {"name": None, "sevanta_deal_id": None, "dealigence_id": None,
+              "matched": False, "source": None}
     )
 
     return {

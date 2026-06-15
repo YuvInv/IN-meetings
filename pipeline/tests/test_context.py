@@ -208,3 +208,33 @@ def test_assemble_surfaces_fetch_error(tmp_path: Path) -> None:
     ctx = assemble(tmp_path)
     assert ctx.calendar_status == "error"
     assert "failed" in (tmp_path / "context.md").read_text(encoding="utf-8").lower()
+
+
+# --- resolve_company: title fallback + source (P1 company naming) ---
+
+def test_resolve_company_title_fallback_meets_separator() -> None:
+    # No external email domain → fall back to the title's external party.
+    assert resolve_company([], "Prelligence <> IN Venture") == {
+        "name": "Prelligence", "sevanta_deal_id": None, "dealigence_id": None,
+        "matched": False, "source": "title"}
+
+
+def test_resolve_company_title_fallback_intro_prefix() -> None:
+    c = resolve_company([], "Intro with Acme AI")
+    assert c["name"] == "Acme AI" and c["source"] == "title"
+
+
+def test_resolve_company_title_fallback_slash() -> None:
+    assert resolve_company([], "IN Venture / Acme")["name"] == "Acme"
+
+
+def test_resolve_company_title_rejects_generic() -> None:
+    assert resolve_company([], "Weekly sync") is None
+    assert resolve_company([], "1:1") is None
+    assert resolve_company([], "IN Venture") is None
+    assert resolve_company([], None) is None
+
+
+def test_resolve_company_domain_sets_source_domain() -> None:
+    att = split_sides(_EVENT, "in-venture.com")
+    assert resolve_company(att, _EVENT["summary"])["source"] == "domain"
