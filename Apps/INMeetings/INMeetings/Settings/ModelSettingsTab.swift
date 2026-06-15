@@ -1,5 +1,6 @@
 // Adapted from Mila (github.com/island-io/mila), © Island Technology / Uri Harduf, Apache-2.0. Changes: rebuilt against our ModelManager (phase/isReady/statusText/retry) for the on-device Hebrew ASR + Silero VAD models; English chrome.
 import SwiftUI
+import INMeetingsCore
 
 /// Settings → Models: install/verify status for the two on-device models the pipeline needs — the
 /// Hebrew ASR GGML (ivrit-turbo) and the Silero VAD. Each row reflects its `ModelManager.phase`: a green

@@ -1,5 +1,7 @@
 // Adapted from Mila (github.com/island-io/mila), © Island Technology / Uri Harduf, Apache-2.0. Changes: tabbed Settings rebuilt for our detection/model/Drive state; English chrome.
 import SwiftUI
+import INMeetingsCore
+
 struct AppSettingsView: View {
     var settings: MeetingDetectionSettings
     var models: ModelManager

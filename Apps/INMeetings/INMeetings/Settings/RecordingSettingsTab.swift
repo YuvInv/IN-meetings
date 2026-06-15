@@ -1,5 +1,6 @@
 // Adapted from Mila (github.com/island-io/mila), © Island Technology / Uri Harduf, Apache-2.0. Changes: rebuilt against our MeetingDetectionSettings (prompt toggle + global snooze + ⌃⌥⌘R hotkey); English chrome.
 import SwiftUI
+import INMeetingsCore
 
 /// Settings → Recording: the "Record now" call-prompt master toggle, a resume control when the user has
 /// snoozed prompts, and a reminder of the global record hotkey. Bound to `MeetingDetectionSettings`
