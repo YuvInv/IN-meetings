@@ -88,6 +88,14 @@ final class DriveAuth {
         }
     }
 
+    /// Best-effort re-push of an edited metadata.json to a meeting's existing Drive folder (P1 rename).
+    func reuploadMetadata(meetingFolderID: String, data: Data) async {
+        guard let location else { return }
+        _ = try? await client.uploadOrReplaceFile(
+            name: "metadata.json", mimeType: "application/json",
+            data: data, parentID: meetingFolderID, driveId: location.driveID)
+    }
+
     // MARK: - Helpers
 
     private func present(_ url: URL) async throws -> URL {

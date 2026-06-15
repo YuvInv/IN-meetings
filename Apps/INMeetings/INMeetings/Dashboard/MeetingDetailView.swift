@@ -11,6 +11,8 @@ struct MeetingDetailView: View {
     @State private var player: AVPlayer?
     @State private var currentTime: Double = 0
     @State private var observer: Any?
+    @State private var isEditingCompany = false
+    @State private var draftCompany = ""
     private var pkg: TranscriptPackage? { store.transcript(for: meeting) }
 
     var body: some View {
@@ -24,8 +26,20 @@ struct MeetingDetailView: View {
     private var header: some View {
         HStack(alignment: .firstTextBaseline) {
             VStack(alignment: .leading, spacing: 4) {
-                Text(meeting.company?.isEmpty == false ? meeting.company! : "Unknown company")
-                    .font(.title2.weight(.semibold))
+                if isEditingCompany {
+                    TextField("Add company", text: $draftCompany)
+                        .textFieldStyle(.roundedBorder).font(.title2.weight(.semibold))
+                        .frame(maxWidth: 280)
+                        .onSubmit { commitCompany() }
+                } else {
+                    Button {
+                        draftCompany = meeting.company ?? ""; isEditingCompany = true
+                    } label: {
+                        Text(meeting.company?.isEmpty == false ? meeting.company! : "Add company")
+                            .font(.title2.weight(.semibold))
+                            .foregroundStyle(meeting.company?.isEmpty == false ? .primary : .secondary)
+                    }.buttonStyle(.plain)
+                }
                 Text("\(meeting.title ?? "Meeting") · \(durationString(meeting.durationSeconds))")
                     .font(.callout).foregroundStyle(.secondary)
             }
@@ -82,5 +96,9 @@ struct MeetingDetailView: View {
     private func copyTranscript() {
         let text = (pkg?.utterances ?? []).map(\.text).joined(separator: "\n")
         NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string)
+    }
+    private func commitCompany() {
+        isEditingCompany = false
+        store.setCompany(draftCompany, for: meeting)
     }
 }
