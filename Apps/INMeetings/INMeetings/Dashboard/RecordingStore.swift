@@ -15,11 +15,19 @@ final class RecordingStore {
 
     private let store: MeetingStore?
     private let drive: DriveAuth?
+    @ObservationIgnored private var finishObserver: NSObjectProtocol?
     init(store: MeetingStore? = try? MeetingStore(url: MeetingStore.defaultURL), drive: DriveAuth? = nil) {
         self.store = store
         self.drive = drive
         load()
+        // Reload when a pipeline job finishes or fails (JobBridge posts this) so newly-done and failed
+        // meetings appear live, without the user reopening the window.
+        finishObserver = NotificationCenter.default.addObserver(
+            forName: .jobBridgeDidFinish, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.load() }
+        }
     }
+    deinit { if let finishObserver { NotificationCenter.default.removeObserver(finishObserver) } }
 
     func load() { meetings = (try? store?.allMeetings()) ?? [] }
 

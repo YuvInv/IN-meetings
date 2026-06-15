@@ -63,6 +63,18 @@ struct MeetingDetailView: View {
                 }.padding()
                 .environment(\.layoutDirection, pkg?.language == "he" ? .rightToLeft : .leftToRight)
             }
+        } else if meeting.status == "failed" {
+            ContentUnavailableView {
+                Label("Transcription failed", systemImage: "exclamationmark.triangle")
+            } description: {
+                Text(meeting.pipelineError ?? "The pipeline did not finish. See pipeline.log for details.")
+            } actions: {
+                Button {
+                    NSWorkspace.shared.activateFileViewerSelecting(
+                        [URL(fileURLWithPath: meeting.folderPath).appendingPathComponent("pipeline.log")])
+                } label: { Label("Reveal pipeline.log", systemImage: "doc.text.magnifyingglass") }
+                    .buttonStyle(.glass)
+            }
         } else {
             ContentUnavailableView("No transcript yet", systemImage: "text.alignleft")
         }

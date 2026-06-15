@@ -23,9 +23,12 @@ struct MeetingRow: View {
                 }
                 HStack(spacing: 6) {
                     chip(meeting.type == "in_person" ? "in-person" : "call", "phone", .secondary)
+                    if meeting.status == "failed" { chip("failed", "exclamationmark.triangle.fill", .red) }
                     if meeting.syncState == "synced" { chip("synced", "cloud.fill", .green) }
                     if meeting.biased { chip("context", "sparkles", .blue) }
-                    if (meeting.company ?? "").isEmpty { chip("link?", "link", .orange) }
+                    if meeting.status != "failed" && (meeting.company ?? "").isEmpty {
+                        chip("link?", "link", .orange)
+                    }
                 }
             }
         }

@@ -52,4 +52,46 @@ final class MeetingStoreTests: XCTestCase {
         try store.updateCompany(id: rec.id, name: nil)
         XCTAssertNil(try store.meeting(id: rec.id)?.company)
     }
+
+    // MARK: - Reliability pass: pipeline-failure surfacing
+
+    func testMarkFailedWritesAFailedRowFromJob() throws {
+        let store = try MeetingStore()
+        let dir = URL(filePath: NSTemporaryDirectory()).appending(path: "mf-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let job: [String: Any] = ["meeting_id": dir.lastPathComponent, "profile": "inPerson",
+                                  "started_at": "2026-06-15T09:00:00Z", "ended_at": "2026-06-15T09:10:00Z",
+                                  "capture_source_app": "Zoom"]
+        try JSONSerialization.data(withJSONObject: job).write(to: dir.appendingPathComponent("job.json"))
+
+        let rec = try store.markFailed(folder: dir, error: "whisper-cli failed: boom")
+        XCTAssertEqual(rec.status, "failed")
+        XCTAssertEqual(rec.type, "in_person")                       // profile → type
+        XCTAssertEqual(rec.startedAt, "2026-06-15T09:00:00Z")       // read back from job.json
+        XCTAssertEqual(rec.captureSourceApp, "Zoom")
+        XCTAssertEqual(rec.pipelineError, "whisper-cli failed: boom")
+        XCTAssertEqual(try store.meeting(id: rec.id)?.status, "failed")
+    }
+
+    func testMarkFailedFallsBackWithoutJob() throws {
+        let store = try MeetingStore()
+        let dir = URL(filePath: NSTemporaryDirectory()).appending(path: "mf2-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let rec = try store.markFailed(folder: dir, error: nil)
+        XCTAssertEqual(rec.status, "failed")
+        XCTAssertEqual(rec.type, "call")        // default when there's no job.json to read
+        XCTAssertNotNil(rec.pipelineError)      // a default message is filled in for the UI
+    }
+
+    func testSuccessfulIndexClearsAPriorFailure() throws {
+        let store = try MeetingStore()
+        _ = try store.markFailed(folder: fixture, error: "boom")   // the golden meeting "failed" first…
+        XCTAssertEqual(try store.meeting(id: "golden-package")?.status, "failed")
+        let rec = try store.indexPackage(at: fixture)              // …then a later run succeeds + clears it
+        XCTAssertEqual(rec.status, "transcribed")
+        XCTAssertNil(try store.meeting(id: "golden-package")?.pipelineError)
+        XCTAssertEqual(try store.allMeetings().count, 1)           // same id, upserted (not duplicated)
+    }
 }
