@@ -23,15 +23,16 @@ Ordered. Sequencing call (Yuval, 2026-06-15): **video is pulled up into P1** (fl
 retention/size cap rides with it. Full rationale in `DECISIONS.md` (2026-06-15).
 
 ### P0 — Installable, real, and trustworthy (the adoption gate)
-1. **Hybrid app shell — Dock app + menu-bar tray.** The app must be BOTH a real Mac app (persistent
+1. **Hybrid app shell — Dock app + menu-bar tray.** ✅ **DONE** (committed `60b3546`, verified live). The app is BOTH a real Mac app (persistent
    **Dock icon**, opens the **dashboard**) AND a menu-bar **tray** for quick *Record-now* — today it's
    `LSUIElement=true` (menu-bar only, no Dock icon). → `LSUIElement=false` + keep `MenuBarExtra`; keep
    the recorder alive when the dashboard window closes (`terminateAfterLastWindowClosed=false`);
    Dock-click (re)opens the dashboard; launch-at-login comes up **quietly** (background, no window pop).
    **Amends ADR-001/ADR-009.** (Plumbing mostly exists — "Open Dashboard" window + fronting.)
-2. **Distribution — a real `.dmg`.** Developer-ID signing + notarization + a drag-to-`/Applications`
-   `.dmg` + launch-at-login (`SMAppService`); Sparkle auto-update after. (Also clears the P2 TCC
-   "responsible process" silence gotcha, which needs a Developer-ID-signed app.)
+2. **Distribution / packaging → moved to the final _Ship_ phase (done LAST, per Yuval 2026-06-15).**
+   Developer-ID sign + notarize + `.dmg` + launch-at-login + Sparkle are best set up once the app is
+   feature-complete, and are gated on Apple Developer enrollment. See the **Ship** phase below + the
+   runbook [`docs/distribution-setup.md`](docs/distribution-setup.md).
 3. **Onboarding / TCC permission wizard.** First-run walk-through for Microphone + System-Audio-
    Recording + Google sign-in (structured to add Screen-Recording when video lands). Without it,
    non-dev teammates hit a wall of scary prompts. (ADR-009)
@@ -63,6 +64,20 @@ open-in-Drive button; mic-device picker + hotkey rebind + storage/consent settin
 post-correction; tighten Drive scope to `drive.file`.
 
 Verification discipline (§4) is unchanged — each item verified on a real meeting before the next.
+
+### Ship — packaging & distribution (done LAST, per Yuval 2026-06-15)
+The "make it installable" packaging is deliberately the **final** step — set up the signing/notarization
+pipeline once, when the app is feature-complete, rather than re-fighting it as the app changes. **Gated on
+an Apple Developer Program membership** (only an `Apple Development` cert exists today — no Developer ID).
+Enrollment + technical runbook: [`docs/distribution-setup.md`](docs/distribution-setup.md).
+- **Developer-ID signing** (replaces the dev cert) + **hardened runtime**.
+- **Notarize + staple** (`notarytool`) → a **drag-to-`/Applications` `.dmg`**.
+- **Launch-at-login** (`SMAppService`) against the *installed* app + quiet-login (no dashboard pop).
+- **Sparkle** auto-update (needs Developer-ID + notarization + EdDSA keys).
+- Install-test on a second Mac (clean Gatekeeper + audio-TCC).
+
+Development continues on the current **Apple Development** signing until then — only *distribution to other
+Macs* needs Developer ID.
 
 ---
 

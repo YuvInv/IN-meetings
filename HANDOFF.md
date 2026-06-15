@@ -19,11 +19,19 @@ SQLite index → per-user Google Drive backup → Liquid Glass dashboard (browse
 - **2026-06-15: full gap analysis + re-prioritization done this session** — see `IMPLEMENTATION_PLAN.md`
   → **"Road to a team-ready v1"** and `DECISIONS.md` (2026-06-15: two entries — the priority order, and
   the hybrid Dock + menu-bar app-shell decision).
-- **P0 #1 (hybrid app shell) IN PROGRESS** on branch `feat/hybrid-app-shell` — `LSUIElement=false` (Dock
-  icon) + a new `AppDelegate` (keep the recorder alive when the dashboard closes + reopen on Dock click) +
-  a `MenuBarLabel`, all in `INMeetingsApp.swift`. `make build-mac` green; ⏳ **pending live-verify** (Dock
-  icon appears, close ≠ quit, Dock-click reopens) before the commit. Plan:
-  `docs/superpowers/plans/2026-06-15-hybrid-app-shell.md`.
+- **P0 #1 (hybrid app shell) ✅ DONE + committed** on branch `feat/hybrid-app-shell` (not yet pushed/PR'd):
+  `523bda9` (docs) + `60b3546` (code). `LSUIElement=false` (Dock icon) + `AppDelegate` (recorder stays
+  alive when the dashboard closes + reopen on Dock-click) + `MenuBarLabel`; **IN Venture logo** as the
+  app/Dock icon (`Assets.xcassets/AppIcon.appiconset`) + menu-bar icon (`MenuBarIcon.imageset`); source at
+  `Apps/INMeetings/AppIcon-source.png`. **Verified live** (Dock + tray show the logo, close ≠ quit,
+  Dock-click reopens, launch opens dashboard). Plan: `docs/superpowers/plans/2026-06-15-hybrid-app-shell.md`.
+- **P0 #2 (distribution) → DEFERRED TO LAST** (final "Ship" phase, per Yuval 2026-06-15) **+ gated on an Apple Developer Program membership.** Runbook: `docs/distribution-setup.md`. Inventory (2026-06-15):
+  only an `Apple Development` cert (team A6C6D257QN), **no `Developer ID Application` cert**, notarytool
+  present, no stored notary creds. No Developer ID → no notarized `.dmg`; the app can't use the App Store
+  (private TCC SPIs). **Launch-at-login is coupled to this** (register the *installed* `/Applications` app,
+  not a DerivedData debug build) so it's parked too. Unblock = enrol in the Apple Developer Program ($99/yr;
+  check if IN Venture already has an account) — walk Yuval through it. **Don't write untestable signing
+  scripts before the cert exists.**
 
 ## Next — START HERE
 Work the ordered roadmap in `IMPLEMENTATION_PLAN.md` → "Road to a team-ready v1". **Sequencing
@@ -31,11 +39,12 @@ Work the ordered roadmap in `IMPLEMENTATION_PLAN.md` → "Road to a team-ready v
 brainstorming flow the next step is to write an implementation plan (writing-plans skill) for the
 first P0 item, then **build + verify each item on a real meeting before the next**.
 
-- **P0 — installable & trustworthy:** (1) **hybrid app shell** — Dock icon + menu-bar tray
-  (`LSUIElement=false` + keep `MenuBarExtra`; don't quit on dashboard close; quiet login) — cheap,
-  high-impact, **start here**; (2) Developer-ID sign + notarize + `.dmg` + launch-at-login; (3)
-  onboarding / TCC wizard (Mic + System-Audio + Google); (4) reliability pass — bundle VAD, verify a
-  real 3+ call, surface pipeline failures.
+- **P0 — trustworthy app:** (1) **hybrid app shell** ✅ DONE (`60b3546`); (2) onboarding / TCC wizard
+  (Mic + System-Audio + Google) — **unblocked**; (3) reliability pass — bundle VAD, verify a real 3+ call,
+  surface pipeline failures — **unblocked**.
+- **Ship (LAST):** Developer-ID sign + notarize + `.dmg` + launch-at-login + Sparkle — **deferred to the
+  end** + gated on Apple Developer enrollment (runbook `docs/distribution-setup.md`).
+  **→ Next unblocked work: reliability or onboarding (Yuval to pick).**
 - **P1 — value loop + video:** company-name inference + **edit/rename UI**; **Claude auto-trigger →
   Saventa CRM** (one-click; `--package` mode in `~/repos/claude-skills`); **video** capture →
   `meeting.mp4` → Drive → playback; retention/size cap (rides with video); Drive folder picker.
