@@ -49,10 +49,19 @@ struct INMeetingsApp: App {
                 Text("🔴 \(recorder.elapsedString)")
                     .monospacedDigit()
             } else {
-                Image(systemName: detector.state.status == .armed ? "waveform.circle.fill" : "waveform")
+                Image(systemName: detector.state.status == .armed ? "waveform.badge.mic" : "waveform")
             }
         }
         .menuBarExtraStyle(.menu)
+
+        Window("IN Meetings", id: "dashboard") {
+            DashboardWindow()
+        }
+        .windowResizability(.contentSize)
+
+        Settings {
+            AppSettingsView(settings: promptSettings, models: models, vadModels: vadModel, drive: drive)
+        }
     }
 }
 
@@ -63,8 +72,13 @@ private struct MenuContent: View {
     var settings: MeetingDetectionSettings
     var coordinator: MeetingPromptCoordinator
     var drive: DriveAuth
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
+        Button("Open Dashboard") { openWindow(id: "dashboard") }
+            .keyboardShortcut("d")
+        Divider()
+
         switch recorder.state {
         case .idle:
             switch detector.state.status {
