@@ -87,6 +87,13 @@ public final class MeetingStore {
         }
     }
 
+    /// Set or clear (`name == nil`) the company for a meeting — the manual dashboard fix (P1).
+    public func updateCompany(id: String, name: String?) throws {
+        try dbQueue.write { db in
+            try db.execute(sql: "UPDATE meeting SET company = ? WHERE id = ?", arguments: [name, id])
+        }
+    }
+
     // MARK: - Schema
 
     private static var migrator: DatabaseMigrator {
