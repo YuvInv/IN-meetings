@@ -10,6 +10,10 @@ import INMeetingsCore
 struct DriveSettingsTab: View {
     var drive: DriveAuth
 
+    @State private var pickerToken: String?
+    @State private var showPicker = false
+    @State private var loadingToken = false
+
     var body: some View {
         Form {
             Section("Google Drive") {
@@ -37,6 +41,17 @@ struct DriveSettingsTab: View {
         }
         .formStyle(.grouped)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .sheet(isPresented: $showPicker) {
+            if let pickerToken {
+                DriveFolderPickerSheet(
+                    token: pickerToken,
+                    onPick: { id, name in
+                        showPicker = false
+                        Task { await drive.chooseFolder(id: id, name: name) }
+                    },
+                    onClose: { showPicker = false })
+            }
+        }
     }
 
     @ViewBuilder
@@ -46,43 +61,32 @@ struct DriveSettingsTab: View {
                 .foregroundStyle(.secondary)
         }
 
-        if drive.sharedDrives.isEmpty {
-            LabeledContent("Backup drive") {
-                Text("No Shared Drives found")
-                    .foregroundStyle(.secondary)
-            }
-        } else {
-            Picker("Backup drive", selection: driveSelection) {
-                Text("Choose a Shared Drive…").tag(String?.none)
-                ForEach(drive.sharedDrives, id: \.id) { sharedDrive in
-                    Text(sharedDrive.name).tag(Optional(sharedDrive.id))
-                }
-            }
-        }
-
         LabeledContent("Backup location") {
             Text(drive.location?.displayName ?? "Not set")
                 .foregroundStyle(.secondary)
         }
 
+        // The real Google Drive web-view picker: browse My Drive + Shared Drives, pick any folder.
+        Button {
+            Task {
+                loadingToken = true
+                pickerToken = await drive.pickerAccessToken()
+                loadingToken = false
+                if pickerToken != nil { showPicker = true }
+            }
+        } label: {
+            Label(drive.location == nil ? "Choose folder in Google Drive…" : "Change backup folder…",
+                  systemImage: "folder.badge.gearshape")
+        }
+        .disabled(loadingToken)
+
         HStack {
-            Button("Refresh drives") { Task { await drive.refreshSharedDrives() } }
+            if loadingToken {
+                ProgressView().controlSize(.small)
+                Text("Opening Drive…").font(.caption).foregroundStyle(.secondary)
+            }
             Spacer()
             Button("Disconnect", role: .destructive) { drive.disconnect() }
         }
-    }
-
-    /// The Shared Drive currently backing the persisted location. Selecting a different one runs
-    /// `choose`, which finds/creates the "IN Meetings" folder on that drive and persists it.
-    private var driveSelection: Binding<String?> {
-        Binding(
-            get: { drive.location?.driveID },
-            set: { newID in
-                guard let newID,
-                      newID != drive.location?.driveID,
-                      let picked = drive.sharedDrives.first(where: { $0.id == newID })
-                else { return }
-                Task { await drive.choose(picked) }
-            })
     }
 }
