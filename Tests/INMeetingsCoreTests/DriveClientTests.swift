@@ -27,4 +27,11 @@ final class DriveClientTests: XCTestCase {
         XCTAssertTrue(text.contains("{\"x\":1}"))
         XCTAssertTrue(text.hasSuffix("--BOUND--\r\n"))
     }
+
+    func testFileQueryEscapesAndScopesToParent() {
+        let q = DriveClient.fileQuery(name: "metadata.json", parentID: "FOLDER1")
+        XCTAssertTrue(q.contains("name = 'metadata.json'"))
+        XCTAssertTrue(q.contains("'FOLDER1' in parents"))
+        XCTAssertTrue(q.contains("trashed = false"))
+    }
 }

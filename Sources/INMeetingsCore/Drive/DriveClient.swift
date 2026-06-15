@@ -31,6 +31,14 @@ public final class DriveClient: @unchecked Sendable {
             + "and mimeType = '\(folderMIME)' and trashed = false"
     }
 
+    /// The `q` to find a non-trashed file by exact name under a parent (any mime). Escapes `\` then `'`.
+    static func fileQuery(name: String, parentID: String) -> String {
+        let escaped = name
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "'", with: "\\'")
+        return "name = '\(escaped)' and '\(parentID)' in parents and trashed = false"
+    }
+
     /// A `multipart/related` body (JSON metadata + media) for a simple upload.
     static func multipartBody(metadata: [String: Any], media: Data, mediaType: String,
                               boundary: String) throws -> Data {
@@ -130,6 +138,41 @@ public final class DriveClient: @unchecked Sendable {
         let (response, _) = try await send(components.url!, method: "POST",
                                            contentType: "multipart/related; boundary=\(boundary)", body: body)
         return try JSONDecoder().decode(IDOnly.self, from: response).id
+    }
+
+    /// Update an existing file's content by (name, parent), or create it if absent — avoids the duplicate
+    /// that a plain `uploadFile` would make. Used to re-push an edited metadata.json. Returns the file id.
+    @discardableResult
+    public func uploadOrReplaceFile(name: String, mimeType: String, data: Data,
+                                    parentID: String, driveId: String?) async throws -> String {
+        var search = URLComponents(url: Self.apiBase.appendingPathComponent("files"),
+                                   resolvingAgainstBaseURL: false)!
+        var query = [
+            URLQueryItem(name: "q", value: Self.fileQuery(name: name, parentID: parentID)),
+            URLQueryItem(name: "fields", value: "files(id,name)"),
+            URLQueryItem(name: "supportsAllDrives", value: "true"),
+            URLQueryItem(name: "includeItemsFromAllDrives", value: "true"),
+        ]
+        if let driveId {
+            query.append(URLQueryItem(name: "corpora", value: "drive"))
+            query.append(URLQueryItem(name: "driveId", value: driveId))
+        }
+        search.queryItems = query
+        let (found, _) = try await send(search.url!, method: "GET")
+        if let existing = try JSONDecoder().decode(FileListResponse.self, from: found).files.first {
+            var update = URLComponents(
+                url: Self.uploadBase.appendingPathComponent("files/\(existing.id)"),
+                resolvingAgainstBaseURL: false)!
+            update.queryItems = [
+                URLQueryItem(name: "uploadType", value: "media"),
+                URLQueryItem(name: "supportsAllDrives", value: "true"),
+                URLQueryItem(name: "fields", value: "id"),
+            ]
+            let (resp, _) = try await send(update.url!, method: "PATCH", contentType: mimeType, body: data)
+            return try JSONDecoder().decode(IDOnly.self, from: resp).id
+        }
+        return try await uploadFile(name: name, mimeType: mimeType, data: data,
+                                    parentID: parentID, driveId: driveId)
     }
 
     /// Upload a (potentially large) file by streaming it from disk through a resumable session — used for

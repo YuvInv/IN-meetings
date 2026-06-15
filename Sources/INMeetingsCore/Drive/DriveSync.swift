@@ -6,6 +6,7 @@ public protocol DriveUploading: Sendable {
     func findOrCreateFolder(name: String, parentID: String, driveId: String?) async throws -> String
     func uploadFile(name: String, mimeType: String, data: Data, parentID: String, driveId: String?) async throws -> String
     func uploadFileResumable(name: String, mimeType: String, fileURL: URL, parentID: String, driveId: String?) async throws -> String
+    func uploadOrReplaceFile(name: String, mimeType: String, data: Data, parentID: String, driveId: String?) async throws -> String
 }
 
 extension DriveClient: DriveUploading {}
