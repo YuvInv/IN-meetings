@@ -16,9 +16,16 @@ public func needsLinking(_ recs: [MeetingRecord]) -> [MeetingRecord] {
     recs.filter { ($0.company ?? "").isEmpty }
 }
 
-/// Meetings still being processed (pipeline not done, or not yet synced).
+/// Meetings still being processed (pipeline not done, or not yet synced). A terminal `"failed"` is NOT
+/// "processing" — it has its own bucket so a stuck-looking spinner never hides a real failure.
 public func processing(_ recs: [MeetingRecord]) -> [MeetingRecord] {
-    recs.filter { $0.status != "done" || $0.syncState == "syncing" || $0.syncState == "local" }
+    recs.filter { $0.status != "failed"
+        && ($0.status != "done" || $0.syncState == "syncing" || $0.syncState == "local") }
+}
+
+/// Meetings whose pipeline failed — surfaced so a failed transcription is visible, not silently dropped.
+public func failed(_ recs: [MeetingRecord]) -> [MeetingRecord] {
+    recs.filter { $0.status == "failed" }
 }
 
 /// Group meetings (newest first) into Today / Yesterday / weekday / long-date buckets.

@@ -32,17 +32,33 @@ public final class DriveSync: @unchecked Sendable {
     /// Small text files — uploaded in one request each.
     static let textFileNames = ["metadata.json", "transcript.json", "transcript.txt", "context.md", "slides_ocr.md"]
 
-    /// The listen artifact + any video. Prefer the single merged `audio.m4a` (the natural playback file);
-    /// fall back to the raw tracks only when the render hasn't produced it (e.g. it failed).
+    /// The single merged playback artifact, preferred over the raw tracks. A video call muxes into
+    /// `meeting.mp4` (video + audio = the whole experience); an audio meeting mixes into `audio.m4a`.
+    /// Only when the render produced neither do we fall back to the raw tracks (+ `video.mov` if present).
     static func mediaFileNames(in folder: URL) -> [String] {
         let fm = FileManager.default
         func has(_ n: String) -> Bool { fm.fileExists(atPath: folder.appendingPathComponent(n).path) }
-        var media: [String] = []
-        if has("audio.m4a") { media.append("audio.m4a") }
-        else { media += ["mic.wav", "system.wav"].filter(has) }
-        if has("meeting.mp4") { media.append("meeting.mp4") }
-        else if has("video.mov") { media.append("video.mov") }
+        if has("meeting.mp4") { return ["meeting.mp4"] }
+        if has("audio.m4a") { return ["audio.m4a"] }
+        var media = ["mic.wav", "system.wav"].filter(has)
+        if has("video.mov") { media.append("video.mov") }
         return media
+    }
+
+    /// After a successful backup, reclaim local disk by deleting the raw tracks — but only when a merged
+    /// playback file (`meeting.mp4` / `audio.m4a`) exists locally (so the dashboard can still play the
+    /// meeting). The raw tracks remain in the package on Drive. Video makes recordings GB-scale, so this
+    /// is on by default; the user can keep raw tracks via `capture.pruneRawTracksAfterBackup = false`.
+    static func pruneRawTracksIfEnabled(in folder: URL, defaults: UserDefaults = .standard) {
+        guard CaptureSettings.bool(defaults, CaptureSettings.Keys.pruneRawTracksAfterBackup, default: true)
+        else { return }
+        let fm = FileManager.default
+        func has(_ n: String) -> Bool { fm.fileExists(atPath: folder.appendingPathComponent(n).path) }
+        guard has("meeting.mp4") || has("audio.m4a") else { return }   // never prune without a merged file
+        for raw in ["mic.wav", "system.wav", "video.mov"] {
+            let url = folder.appendingPathComponent(raw)
+            if fm.fileExists(atPath: url.path) { try? fm.removeItem(at: url) }
+        }
     }
 
     static func mimeType(for name: String) -> String {
@@ -91,6 +107,7 @@ public final class DriveSync: @unchecked Sendable {
         }
 
         try store.setSyncState(id: meetingID, driveFolderId: meetingFolderID, syncState: "synced")
+        Self.pruneRawTracksIfEnabled(in: packageFolder)   // reclaim disk now the merged file is on Drive
         return DriveSyncResult(meetingFolderID: meetingFolderID, uploaded: uploaded)
     }
 }

@@ -11,6 +11,7 @@ struct MeetingDetailView: View {
     @State private var player: AVPlayer?
     @State private var currentTime: Double = 0
     @State private var observer: Any?
+    @State private var isVideo = false
     @State private var isEditingCompany = false
     @State private var draftCompany = ""
     private var pkg: TranscriptPackage? { store.transcript(for: meeting) }
@@ -18,8 +19,13 @@ struct MeetingDetailView: View {
     var body: some View {
         VStack(spacing: 0) {
             header; Divider()
+            if isVideo, let player {
+                PlayerView(player: player)
+                    .frame(height: 260)
+                Divider()
+            }
             transcriptArea.frame(maxWidth: .infinity, maxHeight: .infinity)
-            if player != nil { Divider(); playbackBar }
+            if !isVideo, player != nil { Divider(); playbackBar }
         }
         .onAppear(perform: configure).onDisappear(perform: teardown)
     }
@@ -63,6 +69,18 @@ struct MeetingDetailView: View {
                 }.padding()
                 .environment(\.layoutDirection, pkg?.language == "he" ? .rightToLeft : .leftToRight)
             }
+        } else if meeting.status == "failed" {
+            ContentUnavailableView {
+                Label("Transcription failed", systemImage: "exclamationmark.triangle")
+            } description: {
+                Text(meeting.pipelineError ?? "The pipeline did not finish. See pipeline.log for details.")
+            } actions: {
+                Button {
+                    NSWorkspace.shared.activateFileViewerSelecting(
+                        [URL(fileURLWithPath: meeting.folderPath).appendingPathComponent("pipeline.log")])
+                } label: { Label("Reveal pipeline.log", systemImage: "doc.text.magnifyingglass") }
+                    .buttonStyle(.glass)
+            }
         } else {
             ContentUnavailableView("No transcript yet", systemImage: "text.alignleft")
         }
@@ -80,7 +98,8 @@ struct MeetingDetailView: View {
     }
     private func configure() {
         teardown()
-        guard let url = store.audioURL(for: meeting) else { return }
+        guard let url = store.playbackURL(for: meeting) else { return }
+        isVideo = ["mp4", "mov"].contains(url.pathExtension.lowercased())
         let p = AVPlayer(url: url)
         observer = p.addPeriodicTimeObserver(forInterval: CMTime(value: 1, timescale: 30), queue: .main) {
             currentTime = $0.seconds.isFinite ? $0.seconds : 0
@@ -100,5 +119,24 @@ struct MeetingDetailView: View {
     private func commitCompany() {
         isEditingCompany = false
         store.setCompany(draftCompany, for: meeting)
+    }
+}
+
+/// AVKit's AppKit player view wrapped for SwiftUI. We use this instead of SwiftUI's `VideoPlayer`: on this
+/// macOS/SDK, realizing `VideoPlayer` aborts the Swift runtime while instantiating `_AVKit_SwiftUI` generic
+/// metadata (observed: `getSuperclassMetadata` → `fatalError`, repro'd 3× on opening a video meeting).
+/// `AVPlayerView` is a plain `NSView`, so wrapping it ourselves (like the Drive picker's WKWebView) avoids
+/// that path entirely — and gives native transport controls for free.
+private struct PlayerView: NSViewRepresentable {
+    let player: AVPlayer
+    func makeNSView(context: Context) -> AVPlayerView {
+        let view = AVPlayerView()
+        view.player = player
+        view.controlsStyle = .inline
+        view.videoGravity = .resizeAspect
+        return view
+    }
+    func updateNSView(_ nsView: AVPlayerView, context: Context) {
+        if nsView.player !== player { nsView.player = player }
     }
 }

@@ -70,7 +70,9 @@ public final class JobBridge {
             try data.write(to: jobURL, options: .atomic)
         } catch {
             lastError = "Failed to write job.json: \(error.localizedDescription)"
+            phase = "failed"
             captureLog.error("jobbridge.writeJob failed: \(error.localizedDescription, privacy: .public)")
+            recordFailure(folder: dir, error: lastError)
             return
         }
         let statusURL = dir.appendingPathComponent("status.json")
@@ -102,6 +104,7 @@ public final class JobBridge {
             "started_at": iso.string(from: startedAt),
             "ended_at": iso.string(from: endedAt),
             "created_at": iso.string(from: endedAt),
+            "video": result.video != nil,   // a call-window video.mov was captured (V1) → metadata.json
         ]
         if let captureSourceApp { job["capture_source_app"] = captureSourceApp }
         return job
@@ -146,6 +149,7 @@ public final class JobBridge {
             lastError = "Failed to start pipeline: \(error.localizedDescription)"
             phase = "failed"
             captureLog.error("jobbridge.spawn failed: \(error.localizedDescription, privacy: .public)")
+            recordFailure(folder: jobURL.deletingLastPathComponent(), error: lastError)
             return
         }
         self.process = process
@@ -164,9 +168,14 @@ public final class JobBridge {
                       let phase = obj["phase"] as? String else { return }
                 self.phase = phase
                 if phase == "done" || phase == "failed" {
-                    if phase == "failed" { self.lastError = obj["error"] as? String }
+                    let folder = statusURL.deletingLastPathComponent()
+                    if phase == "failed" {
+                        self.lastError = obj["error"] as? String
+                        self.recordFailure(folder: folder, error: obj["error"] as? String)
+                    }
                     if phase == "done" {
-                        self.indexCompletedPackage(at: statusURL.deletingLastPathComponent())
+                        self.indexCompletedPackage(at: folder)
+                        self.notifyDashboard()
                     }
                     captureLog.notice("jobbridge.finished phase=\(phase, privacy: .public)")
                     timer.invalidate()
@@ -191,4 +200,24 @@ public final class JobBridge {
             Task { await driveBackup.syncIfConfigured(meetingID: folder.lastPathComponent, packageFolder: folder) }
         }
     }
+
+    /// Record a pipeline failure in the index (reliability pass) so the dashboard can show it instead of
+    /// leaving the meeting stuck looking like it's still processing. Best-effort + idempotent.
+    private func recordFailure(folder: URL, error: String?) {
+        do { _ = try store?.markFailed(folder: folder, error: error) }
+        catch { captureLog.error("jobbridge.markFailed failed: \(error.localizedDescription, privacy: .public)") }
+        notifyDashboard()
+    }
+
+    /// Tell any open dashboard to reload its index (a finished/failed meeting just changed the DB).
+    private func notifyDashboard() {
+        NotificationCenter.default.post(name: .jobBridgeDidFinish, object: nil)
+    }
+}
+
+public extension Notification.Name {
+    /// Posted on the main thread when a pipeline job reaches a terminal phase (done or failed). The
+    /// dashboard observes this and reloads its index so finished and failed meetings appear without the
+    /// user having to reopen the window.
+    static let jobBridgeDidFinish = Notification.Name("INMeetings.jobBridgeDidFinish")
 }

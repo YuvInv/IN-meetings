@@ -7,8 +7,17 @@ public struct DetectionState: Equatable, Sendable {
     public var status: Status
     /// Friendly names of the app(s) hosting a detected call (e.g. "Zoom", "Google Chrome (Meet/web call)").
     public var callApps: [String]
+    /// Bundle ids of the app(s) hosting a detected call (e.g. "com.google.Chrome") — what ScreenCaptureKit
+    /// needs to scope window-only video capture to the call app (V1 video). Helper suffixes stripped.
+    public var callAppBundleIDs: [String]
 
-    public static let idle = DetectionState(status: .idle, callApps: [])
+    public init(status: Status, callApps: [String], callAppBundleIDs: [String] = []) {
+        self.status = status
+        self.callApps = callApps
+        self.callAppBundleIDs = callAppBundleIDs
+    }
+
+    public static let idle = DetectionState(status: .idle, callApps: [], callAppBundleIDs: [])
 }
 
 /// Polls Core Audio process I/O and publishes whether a live call is in progress (ADR-001 / P3).
@@ -50,6 +59,7 @@ public final class CallDetector {
     private func poll() {
         let calls = AudioProcessProbe.audioProcesses().filter(\.bidirectional)
         let apps = Set(calls.map(\.app)).sorted()
-        state = DetectionState(status: calls.isEmpty ? .idle : .armed, callApps: apps)
+        let bundles = Set(calls.map(\.appBundleID)).sorted()
+        state = DetectionState(status: calls.isEmpty ? .idle : .armed, callApps: apps, callAppBundleIDs: bundles)
     }
 }

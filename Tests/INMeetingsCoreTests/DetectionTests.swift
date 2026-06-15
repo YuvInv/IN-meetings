@@ -17,4 +17,12 @@ final class DetectionTests: XCTestCase {
     func testUnknownBundlePassesThrough() {
         XCTAssertEqual(AudioProcessProbe.normalizedApp("com.acme.whatever"), "com.acme.whatever")
     }
+
+    /// The bundle id ScreenCaptureKit matches windows on: helper suffix stripped, but NOT friendly-named
+    /// (SCRunningApplication.bundleIdentifier is the real id, e.g. "com.google.Chrome").
+    func testStrippedBundleIDDropsHelperSuffixButKeepsTheRealID() {
+        XCTAssertEqual(AudioProcessProbe.strippedBundleID("com.google.Chrome.helper (Renderer)"),
+                       "com.google.Chrome")
+        XCTAssertEqual(AudioProcessProbe.strippedBundleID("us.zoom.xos"), "us.zoom.xos")
+    }
 }

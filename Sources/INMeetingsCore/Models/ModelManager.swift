@@ -88,12 +88,37 @@ public final class ModelManager {
         guard !didStart else { return }
         didStart = true
 
+        provisionFromBundleIfNeeded()   // copy a bundled model (the tiny Silero VAD) into place first
         if isInstalled() {
             phase = .ready
             modelLog.notice("model already installed: \(self.destination.path, privacy: .public)")
             return
         }
         startDownload()
+    }
+
+    /// If the app bundle ships this model as a resource, copy it into the on-disk cache on first launch
+    /// so the pipeline always has it — no network round-trip, works offline and on day one. We bundle
+    /// only the **Silero VAD** (~865 KB); the 1.6 GB Hebrew model is too big to ship in the `.app` and
+    /// still downloads. The bundled copy is SHA-256-verified before it's trusted (a mismatch is ignored —
+    /// we fall back to downloading). No-op once installed, and for any model with no bundled copy.
+    private func provisionFromBundleIfNeeded() {
+        guard !isInstalled() else { return }
+        let name = (entry.filename as NSString).deletingPathExtension
+        let ext = (entry.filename as NSString).pathExtension
+        guard let bundled = Bundle.main.url(forResource: name, withExtension: ext) else { return }
+        do {
+            guard try Self.sha256(ofFileAt: bundled) == entry.sha256 else {
+                modelLog.error("bundled model checksum mismatch, ignoring: \(self.entry.filename, privacy: .public)")
+                return
+            }
+            try FileManager.default.createDirectory(at: Self.modelsDirectory, withIntermediateDirectories: true)
+            try? FileManager.default.removeItem(at: destination)
+            try FileManager.default.copyItem(at: bundled, to: destination)
+            modelLog.notice("provisioned model from bundle: \(self.destination.path, privacy: .public)")
+        } catch {
+            modelLog.error("bundle provisioning failed: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     /// Re-arm after a failure (menu "Retry Model Download").

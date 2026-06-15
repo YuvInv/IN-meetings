@@ -59,7 +59,48 @@ public final class MeetingStore {
             folderPath: folder.path,
             consentStatus: metadata.consent?.status,
             driveFolderId: nil,   // set by slice 6 (Drive sync) via a dedicated update path
-            syncState: "local"
+            syncState: "local",
+            pipelineError: nil    // a successful (re-)index clears any prior failure
+        )
+        try dbQueue.write { db in try record.save(db) }
+        return record
+    }
+
+    /// Record a pipeline failure so the dashboard can show it (reliability pass). A failed job leaves no
+    /// metadata.json, so `indexPackage` can't run; instead we read the record-time facts back from the
+    /// `job.json` we wrote on Stop and upsert a minimal `status:"failed"` row carrying `error`. Idempotent
+    /// (keyed on the meeting-id folder name); a later successful `indexPackage` overwrites it to
+    /// `"transcribed"` with `pipelineError = nil`.
+    @discardableResult
+    public func markFailed(folder: URL, error: String?) throws -> MeetingRecord {
+        let id = folder.lastPathComponent
+        let job = (try? Data(contentsOf: folder.appendingPathComponent("job.json")))
+            .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+        let nowISO = ISO8601DateFormatter().string(from: Date())
+        let started = job["started_at"] as? String ?? nowISO
+        let ended = job["ended_at"] as? String ?? nowISO
+        let type = (job["profile"] as? String) == CaptureProfile.inPerson.rawValue ? "in_person" : "call"
+
+        let existing = try meeting(id: id)
+        let record = MeetingRecord(
+            id: id,
+            company: existing?.company,
+            title: existing?.title,
+            type: existing?.type ?? type,
+            startedAt: existing?.startedAt ?? started,
+            endedAt: existing?.endedAt ?? ended,
+            durationSeconds: existing?.durationSeconds,
+            status: "failed",
+            speakerCount: existing?.speakerCount ?? 0,
+            diarized: existing?.diarized ?? false,
+            biased: existing?.biased ?? false,
+            modelRevision: existing?.modelRevision,
+            captureSourceApp: existing?.captureSourceApp ?? (job["capture_source_app"] as? String),
+            folderPath: folder.path,
+            consentStatus: existing?.consentStatus,
+            driveFolderId: existing?.driveFolderId,
+            syncState: existing?.syncState ?? "local",
+            pipelineError: error ?? "Transcription failed (see pipeline.log)."
         )
         try dbQueue.write { db in try record.save(db) }
         return record
@@ -119,6 +160,14 @@ public final class MeetingStore {
                 t.column("syncState", .text).notNull()
             }
         }
+        migrator.registerMigration("v2-pipeline-error") { db in
+            // Surface pipeline failures in the dashboard: a `status:"failed"` row carries the error here
+            // (a failed job never produces a metadata.json, so `indexPackage` can't run — `markFailed`
+            // writes a minimal row instead). Nullable; cleared when a later run succeeds.
+            try db.alter(table: MeetingRecord.databaseTableName) { t in
+                t.add(column: "pipelineError", .text)
+            }
+        }
         return migrator
     }
 }
@@ -145,4 +194,6 @@ public struct MeetingRecord: Codable, FetchableRecord, PersistableRecord, Sendab
     public var consentStatus: String?
     public var driveFolderId: String?
     public var syncState: String
+    /// Non-nil only when `status == "failed"`: the pipeline error to show in the dashboard.
+    public var pipelineError: String?
 }

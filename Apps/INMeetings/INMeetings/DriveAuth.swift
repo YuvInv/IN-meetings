@@ -88,6 +88,26 @@ final class DriveAuth {
         }
     }
 
+    /// A fresh OAuth access token to seed the Google Picker web view (refreshes if needed); nil if not
+    /// connected.
+    func pickerAccessToken() async -> String? {
+        try? await tokens.validAccessToken()
+    }
+
+    /// Persist a folder the user picked in the Google Picker as the backup location. Resolves which Shared
+    /// Drive the folder belongs to (nil = My Drive) so `DriveSync` scopes its calls correctly. The app
+    /// creates `<Company>/<meeting>/` under exactly this folder.
+    func chooseFolder(id: String, name: String) async {
+        do {
+            let info = try await client.fileInfo(id: id)
+            let chosen = DriveLocation(driveID: info.driveId, folderID: id, displayName: name)
+            locationStore.save(chosen)
+            location = chosen
+        } catch {
+            status = .failed(error.localizedDescription)
+        }
+    }
+
     /// Best-effort re-push of an edited metadata.json to a meeting's existing Drive folder (P1 rename).
     func reuploadMetadata(meetingFolderID: String, data: Data) async {
         guard let location else { return }

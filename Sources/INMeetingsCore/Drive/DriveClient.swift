@@ -61,6 +61,13 @@ public final class DriveClient: @unchecked Sendable {
         public let name: String
     }
 
+    /// A file/folder's identity + which Shared Drive it lives in (`driveId` nil = My Drive).
+    public struct FileInfo: Decodable, Sendable {
+        public let id: String
+        public let name: String
+        public let driveId: String?
+    }
+
     private struct IDOnly: Decodable { let id: String }
     private struct FileListResponse: Decodable { let files: [DriveItem] }
     private struct DriveListResponse: Decodable { let drives: [DriveItem] }
@@ -85,6 +92,19 @@ public final class DriveClient: @unchecked Sendable {
         let (data, _) = try await send(components.url!, method: "GET")
         struct About: Decodable { struct User: Decodable { let emailAddress: String }; let user: User }
         return try JSONDecoder().decode(About.self, from: data).user.emailAddress
+    }
+
+    /// Look up a file/folder by id — used after the Google Picker returns a folder to resolve which Shared
+    /// Drive it belongs to (`driveId`; nil = My Drive), which scopes later Drive API calls correctly.
+    public func fileInfo(id: String) async throws -> FileInfo {
+        var components = URLComponents(url: Self.apiBase.appendingPathComponent("files/\(id)"),
+                                       resolvingAgainstBaseURL: false)!
+        components.queryItems = [
+            URLQueryItem(name: "fields", value: "id,name,driveId"),
+            URLQueryItem(name: "supportsAllDrives", value: "true"),
+        ]
+        let (data, _) = try await send(components.url!, method: "GET")
+        return try JSONDecoder().decode(FileInfo.self, from: data)
     }
 
     /// Find a folder by name under `parentID`, or create it. `driveId` scopes the search to a Shared Drive.

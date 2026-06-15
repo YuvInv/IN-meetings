@@ -34,4 +34,16 @@ final class DriveClientTests: XCTestCase {
         XCTAssertTrue(q.contains("'FOLDER1' in parents"))
         XCTAssertTrue(q.contains("trashed = false"))
     }
+
+    /// The folder picker resolves a picked folder's Shared Drive via files.get — `driveId` is absent for
+    /// My Drive items and present for Shared Drive items.
+    func testFileInfoDecodesWithAndWithoutDriveId() throws {
+        let shared = try JSONDecoder().decode(
+            DriveClient.FileInfo.self, from: Data(#"{"id":"f1","name":"Deals","driveId":"0ASHARED"}"#.utf8))
+        XCTAssertEqual(shared.driveId, "0ASHARED")
+        XCTAssertEqual(shared.name, "Deals")
+        let myDrive = try JSONDecoder().decode(
+            DriveClient.FileInfo.self, from: Data(#"{"id":"f2","name":"Notes"}"#.utf8))
+        XCTAssertNil(myDrive.driveId)        // My Drive → no driveId
+    }
 }

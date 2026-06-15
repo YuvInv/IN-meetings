@@ -10,6 +10,9 @@ struct AudioProc: Equatable {
     /// Both directions active → a live call (vs. one-way playback or dictation).
     var bidirectional: Bool { input && output }
     var app: String { AudioProcessProbe.normalizedApp(bundleID) }
+    /// The owning app's bundle id with Chromium/Electron helper suffixes stripped (e.g.
+    /// `com.google.Chrome.helper` → `com.google.Chrome`) — the id ScreenCaptureKit matches windows on.
+    var appBundleID: String { AudioProcessProbe.strippedBundleID(bundleID) }
 }
 
 /// Reads per-process audio I/O from Core Audio.
@@ -40,13 +43,20 @@ enum AudioProcessProbe {
         "com.apple.FaceTime": "FaceTime",
     ]
 
-    /// Strip Chromium/Electron helper suffixes then apply a friendly name:
-    /// `"com.google.Chrome.helper (Renderer)"` → `"Google Chrome (Meet/web call)"`.
-    static func normalizedApp(_ bundleID: String) -> String {
+    /// Strip Chromium/Electron helper suffixes to the real app bundle id:
+    /// `"com.google.Chrome.helper (Renderer)"` → `"com.google.Chrome"`.
+    static func strippedBundleID(_ bundleID: String) -> String {
         var id = bundleID
         for marker in [".helper", ".Helper"] {
             if let r = id.range(of: marker) { id = String(id[..<r.lowerBound]); break }
         }
+        return id
+    }
+
+    /// Strip helper suffixes then apply a friendly name:
+    /// `"com.google.Chrome.helper (Renderer)"` → `"Google Chrome (Meet/web call)"`.
+    static func normalizedApp(_ bundleID: String) -> String {
+        let id = strippedBundleID(bundleID)
         return friendlyNames[id] ?? id
     }
 

@@ -10,11 +10,13 @@ private enum TranscriptStub {
 
 final class MeetingBucketingTests: XCTestCase {
     private func rec(_ id: String, company: String?, title: String?, start: String,
-                     matched: Bool = true, status: String = "done") -> MeetingRecord {
+                     matched: Bool = true, status: String = "done",
+                     syncState: String = "synced") -> MeetingRecord {
         MeetingRecord(id: id, company: company, title: title, type: "call", startedAt: start,
                       endedAt: start, durationSeconds: 60, status: status, speakerCount: 2,
                       diarized: true, biased: true, modelRevision: "r", captureSourceApp: nil,
-                      folderPath: "/tmp/\(id)", consentStatus: nil, driveFolderId: nil, syncState: "synced")
+                      folderPath: "/tmp/\(id)", consentStatus: nil, driveFolderId: nil,
+                      syncState: syncState, pipelineError: status == "failed" ? "boom" : nil)
     }
     func testFilterMatchesCompanyTitleAndId() {
         let recs = [rec("a", company: "Prelligence", title: "Sync", start: "2026-06-14T10:00:00Z"),
@@ -28,6 +30,16 @@ final class MeetingBucketingTests: XCTestCase {
                     rec("b", company: "X", title: "t", start: "2026-06-14T10:00:00Z", status: "running")]
         XCTAssertEqual(needsLinking(recs).map(\.id), ["a"])        // no company
         XCTAssertEqual(processing(recs).map(\.id), ["b"])          // not done/synced
+    }
+    func testFailedIsItsOwnBucketNotProcessing() {
+        let recs = [rec("ok", company: "X", title: "t", start: "2026-06-14T10:00:00Z"),
+                    rec("bad", company: "Y", title: "t", start: "2026-06-14T10:00:00Z", status: "failed"),
+                    // still genuinely in-flight (not yet synced)
+                    rec("run", company: "Z", title: "t", start: "2026-06-14T10:00:00Z",
+                        status: "transcribed", syncState: "local")]
+        XCTAssertEqual(failed(recs).map(\.id), ["bad"])            // failed gets its own bucket
+        XCTAssertFalse(processing(recs).map(\.id).contains("bad")) // …and is NOT counted as processing
+        XCTAssertEqual(processing(recs).map(\.id), ["run"])        // only the genuinely in-flight one
     }
     func testActiveUtterance() {
         let us = [TranscriptStub.u(0, 2), TranscriptStub.u(2, 5), TranscriptStub.u(5, 9)]

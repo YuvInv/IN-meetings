@@ -5,7 +5,10 @@ import Foundation
 /// gets the natural "whole meeting" audio, not two separate channels (DECISIONS 2026-06-14). The raw
 /// mic/system WAVs stay as the lossless transcription inputs.
 public struct PlaybackRenderer: Sendable {
+    /// The audio-only merged playback file (in-person, or a call recorded without video).
     public static let outputName = "audio.m4a"
+    /// The video merged playback file — call-window video + the level-balanced audio, muxed (V1 video).
+    public static let videoOutputName = "meeting.mp4"
     public init() {}
 
     /// Per-track playback volumes that equalize perceived loudness: the louder track stays at 1.0, the
@@ -33,8 +36,10 @@ public struct PlaybackRenderer: Sendable {
         return n > 0 ? (sum / Float(n)).squareRoot() : 0
     }
 
-    /// Mix the tracks into `output` (`.m4a`, AAC), level-balanced. One track → straight transcode.
-    public func render(tracks: [URL], to output: URL) async throws {
+    /// Mix the audio tracks into `output`, level-balanced; when `video` is given, mux it in too so the
+    /// output is one watchable `meeting.mp4` (window video + balanced audio). One audio track → no
+    /// balancing. Audio and video both start at t=0 (they were captured together within the same Start).
+    public func render(tracks: [URL], video: URL? = nil, to output: URL) async throws {
         let composition = AVMutableComposition()
         let audioMix = AVMutableAudioMix()
         var params: [AVMutableAudioMixInputParameters] = []
@@ -54,12 +59,28 @@ public struct PlaybackRenderer: Sendable {
             params.append(p)
         }
         audioMix.inputParameters = params
-        guard let export = AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetAppleM4A) else {
-            throw NSError(domain: "PlaybackRenderer", code: 1)
+
+        var hasVideo = false
+        if let video {
+            let vAsset = AVURLAsset(url: video)
+            if let vSrc = try? await vAsset.loadTracks(withMediaType: .video).first,
+               let vDst = composition.addMutableTrack(withMediaType: .video,
+                                                      preferredTrackID: kCMPersistentTrackID_Invalid) {
+                let vDur = (try? await vAsset.load(.duration)) ?? .zero
+                try vDst.insertTimeRange(CMTimeRange(start: .zero, duration: vDur), of: vSrc, at: .zero)
+                hasVideo = true
+            }
         }
+
+        let preset = hasVideo ? AVAssetExportPresetHEVCHighestQuality : AVAssetExportPresetAppleM4A
+        var session = AVAssetExportSession(asset: composition, presetName: preset)
+        if session == nil, hasVideo {   // some configs lack the HEVC preset — fall back to H.264
+            session = AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetHighestQuality)
+        }
+        guard let export = session else { throw NSError(domain: "PlaybackRenderer", code: 1) }
         try? FileManager.default.removeItem(at: output)
         export.outputURL = output
-        export.outputFileType = .m4a
+        export.outputFileType = hasVideo ? .mp4 : .m4a
         export.audioMix = audioMix
         await export.export()
         if export.status != .completed { throw export.error ?? NSError(domain: "PlaybackRenderer", code: 2) }

@@ -34,20 +34,24 @@ SQLite index → per-user Google Drive backup → Liquid Glass dashboard (browse
   scripts before the cert exists.**
 
 ## Next — START HERE
-Work the ordered roadmap in `IMPLEMENTATION_PLAN.md` → "Road to a team-ready v1". **Sequencing
-(Yuval, 2026-06-15): video is pulled up into P1.** The brainstorm/gap-analysis is done; per the
-brainstorming flow the next step is to write an implementation plan (writing-plans skill) for the
-first P0 item, then **build + verify each item on a real meeting before the next**.
+**2026-06-15 session 2:** built **three slices on branch `feat/reliability-video-drive-picker`** (3 atomic
+commits, NOT pushed/PR'd): **P0 reliability** (`56642b0`), **P1 call video** (`2ba876e`), **P1 Drive folder
+picker** (`880f8cf`). All green: **Core 76 tests, pipeline 54, `make build-mac`, app launches clean.**
+**⏳ The live behaviours are unverified — run `docs/manual-tests-reliability-video-picker.md` on Yuval's Mac.**
+**One external blocker:** the Drive picker needs a **Google Picker browser API key** in GCP project
+`1062382667236` (set `GOOGLE_PICKER_API_KEY` / `DriveConfig.pickerAPIKeyDefault`) — until then the picker
+sheet shows setup steps. Then: **PR the branch** (split or single), or keep iterating.
 
 - **P0 — trustworthy app:** (1) **hybrid app shell** ✅ DONE (`60b3546`); (2) onboarding / TCC wizard
-  (Mic + System-Audio + Google) — **unblocked**; (3) reliability pass — bundle VAD, verify a real 3+ call,
-  surface pipeline failures — **unblocked**.
+  (Mic + System-Audio + **Screen-Recording** + Google) — **unblocked, still TODO**; (3) **reliability pass**
+  ✅ CODE DONE (`56642b0`: VAD bundled+provisioned, failures surfaced) — **⏳ live-verify VAD on a real call
+  + multi-party 3+ diarization.**
 - **Ship (LAST):** Developer-ID sign + notarize + `.dmg` + launch-at-login + Sparkle — **deferred to the
   end** + gated on Apple Developer enrollment (runbook `docs/distribution-setup.md`).
-  **→ Next unblocked work: reliability or onboarding (Yuval to pick).**
-- **P1 — value loop + video:** company-name inference + **edit/rename UI**; **Claude auto-trigger →
-  Saventa CRM** (one-click; `--package` mode in `~/repos/claude-skills`); **video** capture →
-  `meeting.mp4` → Drive → playback; retention/size cap (rides with video); Drive folder picker.
+- **P1 — value loop + video:** company-name inference + edit/rename UI ✅ (PR #9); **Claude auto-trigger →
+  Saventa CRM** (one-click; `--package` mode in `~/repos/claude-skills`) — **still TODO, the main value gap**;
+  **video** ✅ CODE DONE (`2ba876e`); retention cap ✅ CODE DONE (rides with video); **Drive folder picker**
+  ✅ CODE DONE (`880f8cf`, real Google Picker web view) + GCP key prereq.
 - **P2 — polish:** ring-buffer, auto-stop prompt, speaker naming, trash/export, settings depth.
 - **Out of scope for v1:** the in-app "AI overview" panel (the CRM *trigger* is in P1; the rich summary
   surface is deferred).
@@ -72,19 +76,25 @@ first P0 item, then **build + verify each item on a real meeting before the next
   compiled in; model download → `IN_MEETINGS_MODEL`.
 
 ## Open / follow-ups
-- **Partial-silence hallucination** — VAD (Silero) added + validated in benchmarks; still needs **bundling in
-  the app + live verification at scale** (P0 reliability pass). The most important robustness gap for real
-  multi-party calls.
+- **Partial-silence hallucination** — VAD (Silero) **now bundled in the app + provisioned-from-bundle on
+  launch** (`56642b0`); still needs **live verification at scale** (record a real call, confirm no
+  hallucinated Hebrew on silence). The most important robustness gap for real multi-party calls.
 - **Multi-party-call (3+) diarization quality** — still untested on a real recording (P0); review the
   per-meeting `pipeline.log` once one runs.
-- **Merged playback file**: ✅ audio (`audio.m4a`, slice 1, uploaded to Drive). ⏳ `meeting.mp4` (video) lands
-  with the P1 video work.
+- **Merged playback file**: ✅ audio (`audio.m4a`) + ✅ **video (`meeting.mp4`, `2ba876e`)** — muxed window
+  video + balanced audio, uploaded to Drive, played in the dashboard. ⏳ live-verify A/V sync on a real call.
+- **Screen Recording grant** — call video needs it; `Permissions.requestScreenRecording` provokes the prompt
+  but the grant only takes effect on a **relaunch** (degrades to audio-only until then). Fold into onboarding.
+- **Drive picker GCP key** — provision the **Google Picker browser API key** in project `1062382667236`
+  (enable the Google Picker API) so the web-view picker renders; `GOOGLE_PICKER_API_KEY` / `pickerAPIKeyDefault`.
 - **Company naming** (gap #2, P1): inference is calendar-external-domain only → "Unknown company" on no-match /
   internal-only / fetch-fail; title + transcript fallbacks designed but unused; **no edit/rename UI** yet.
 - (carried) per-company variant accumulation; fuzzy/edit-distance post-correct; calendars beyond `primary`;
   multiple internal domains (config).
-- (carried) retention/size cap (ADR-010, P1); tighten Drive scope to `drive.file` (P2); pyannote fallback not
-  wired; Soniox cloud fallback; **ADR-010 counsel review — esp. video-on-by-default consent/retention** (P1/P2).
+- (carried) retention: ✅ **prune raw tracks after Drive backup** (`2ba876e`, on by default, user-disablable);
+  a **global cache-size cap** (delete oldest synced meetings beyond N GB) is still TODO. Tighten Drive scope to
+  `drive.file` (P2); pyannote fallback not wired; Soniox cloud fallback; **ADR-010 counsel review — esp.
+  video-on-by-default consent/retention** (now live, P1/P2).
 
 ## Context
 - Env: macOS 26 / M3+/16GB. Local cache under `~/Library/Application Support/IN Meetings/` (`Recordings/`,

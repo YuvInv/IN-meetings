@@ -32,6 +32,52 @@ final class PlaybackRendererTests: XCTestCase {
         XCTAssertEqual(audioTracks.count, 1)
     }
 
+    /// The V1 video path: a window video + the two audio tracks mux into one `meeting.mp4` carrying both
+    /// a video and an audio track.
+    func testRenderMuxesVideoAndAudioIntoMP4() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let mic = try writeSine(dir.appendingPathComponent("mic.wav"), seconds: 1.0, freq: 220, rate: 24000)
+        let sys = try writeSine(dir.appendingPathComponent("system.wav"), seconds: 1.0, freq: 440, rate: 48000)
+        let video = try await writeBlankVideo(dir.appendingPathComponent("video.mov"), seconds: 1.0)
+        let out = dir.appendingPathComponent(PlaybackRenderer.videoOutputName)
+        try await PlaybackRenderer().render(tracks: [mic, sys], video: video, to: out)
+
+        let tracks = try await AVURLAsset(url: out).load(.tracks)
+        XCTAssertEqual(tracks.filter { $0.mediaType == .video }.count, 1)   // muxed video
+        XCTAssertEqual(tracks.filter { $0.mediaType == .audio }.count, 1)   // + the balanced audio
+    }
+
+    /// Writes a short H.264 video (solid black frames) at `url` via AVAssetWriter, returning the URL.
+    private func writeBlankVideo(_ url: URL, seconds: Double, fps: Int32 = 10,
+                                 size: CGSize = CGSize(width: 160, height: 120)) async throws -> URL {
+        let writer = try AVAssetWriter(outputURL: url, fileType: .mov)
+        let input = AVAssetWriterInput(mediaType: .video, outputSettings: [
+            AVVideoCodecKey: AVVideoCodecType.h264,
+            AVVideoWidthKey: Int(size.width), AVVideoHeightKey: Int(size.height),
+        ])
+        input.expectsMediaDataInRealTime = false
+        let adaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: input, sourcePixelBufferAttributes: [
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32ARGB,
+            kCVPixelBufferWidthKey as String: Int(size.width),
+            kCVPixelBufferHeightKey as String: Int(size.height),
+        ])
+        guard writer.canAdd(input) else { throw NSError(domain: "writeBlankVideo", code: 1) }
+        writer.add(input)
+        writer.startWriting()
+        writer.startSession(atSourceTime: .zero)
+        for i in 0..<Int(Double(fps) * seconds) {
+            while !input.isReadyForMoreMediaData { await Task.yield() }
+            var pb: CVPixelBuffer?
+            CVPixelBufferCreate(nil, Int(size.width), Int(size.height), kCVPixelFormatType_32ARGB, nil, &pb)
+            if let pb { adaptor.append(pb, withPresentationTime: CMTime(value: CMTimeValue(i), timescale: fps)) }
+        }
+        input.markAsFinished()
+        await writer.finishWriting()
+        return url
+    }
+
     /// Writes a mono float32 sine WAV at `url` using AVAudioFile, returning the URL.
     private func writeSine(_ url: URL, seconds: Double, freq: Double, rate: Double) throws -> URL {
         let settings: [String: Any] = [
