@@ -30,13 +30,26 @@ public final class DriveSync: @unchecked Sendable {
 
     /// Small text files — uploaded in one request each.
     static let textFileNames = ["metadata.json", "transcript.json", "transcript.txt", "context.md", "slides_ocr.md"]
-    /// Recordings — streamed from disk via a resumable session (can be hundreds of MB).
-    static let mediaFileNames = ["mic.wav", "system.wav", "video.mov"]
+
+    /// The listen artifact + any video. Prefer the single merged `audio.m4a` (the natural playback file);
+    /// fall back to the raw tracks only when the render hasn't produced it (e.g. it failed).
+    static func mediaFileNames(in folder: URL) -> [String] {
+        let fm = FileManager.default
+        func has(_ n: String) -> Bool { fm.fileExists(atPath: folder.appendingPathComponent(n).path) }
+        var media: [String] = []
+        if has("audio.m4a") { media.append("audio.m4a") }
+        else { media += ["mic.wav", "system.wav"].filter(has) }
+        if has("meeting.mp4") { media.append("meeting.mp4") }
+        else if has("video.mov") { media.append("video.mov") }
+        return media
+    }
 
     static func mimeType(for name: String) -> String {
         if name.hasSuffix(".json") { return "application/json" }
         if name.hasSuffix(".md") { return "text/markdown" }
         if name.hasSuffix(".wav") { return "audio/wav" }
+        if name.hasSuffix(".m4a") { return "audio/mp4" }
+        if name.hasSuffix(".mp4") { return "video/mp4" }
         if name.hasSuffix(".mov") { return "video/quicktime" }
         return "text/plain"
     }
@@ -68,7 +81,7 @@ public final class DriveSync: @unchecked Sendable {
                                             data: data, parentID: meetingFolderID, driveId: location.driveID)
             uploaded.append(name)
         }
-        for name in Self.mediaFileNames {
+        for name in Self.mediaFileNames(in: packageFolder) {
             let fileURL = packageFolder.appendingPathComponent(name)
             guard FileManager.default.fileExists(atPath: fileURL.path) else { continue }
             _ = try await client.uploadFileResumable(name: name, mimeType: Self.mimeType(for: name),
