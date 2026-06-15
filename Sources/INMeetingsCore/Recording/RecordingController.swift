@@ -123,6 +123,9 @@ public final class RecordingController {
         tick = nil
         let session = self.session
         self.session = nil
+        // Snapshot the record-time facts now — finalizing the video is async, and a rapid stop→start
+        // must not let the next recording's source app leak into this one's metadata.
+        let sourceApp = recordingSourceApp
         elapsed = 0
         state = .idle
         guard let session else { return }
@@ -130,11 +133,12 @@ public final class RecordingController {
         // hand the result to the pipeline + renderer on the main actor.
         Task { @MainActor in
             let result = await session.stop()
-            self.finish(result, startedAt: startedAt, endedAt: endedAt)
+            self.finish(result, startedAt: startedAt, endedAt: endedAt, captureSourceApp: sourceApp)
         }
     }
 
-    private func finish(_ result: CaptureSession.Result, startedAt: Date, endedAt: Date) {
+    private func finish(_ result: CaptureSession.Result, startedAt: Date, endedAt: Date,
+                        captureSourceApp: String?) {
         lastRecordingDir = result.directory
         let sys = result.systemPeakDB.map { String(format: "sys %.0f dB", $0) } ?? "mic-only"
         lastDiagnostic = "Last: " + String(format: "mic %.0f dB", result.micPeakDB) + " · " + sys
@@ -144,7 +148,7 @@ public final class RecordingController {
             lastError = "System-audio track was silent — make sure audio is playing, and that IN Meetings has 'System Audio Recording' in System Settings (a relaunch after granting may be needed)."
         }
         // Hand the recording to the transcription pipeline (ADR-009); record-time facts feed metadata.json.
-        jobBridge.enqueue(result, startedAt: startedAt, endedAt: endedAt, captureSourceApp: recordingSourceApp)
+        jobBridge.enqueue(result, startedAt: startedAt, endedAt: endedAt, captureSourceApp: captureSourceApp)
         // Render the single merged playback file alongside transcription (it needs only the raw tracks).
         // With a call video → `meeting.mp4` (window video + level-balanced audio); audio-only → `audio.m4a`.
         // Best-effort: a failure leaves the dashboard/Drive to fall back to the raw tracks.
