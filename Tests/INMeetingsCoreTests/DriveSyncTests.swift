@@ -81,6 +81,17 @@ final class DriveSyncTests: XCTestCase {
         XCTAssertTrue(fake.uploadedNames.contains("metadata.json"))
     }
 
+    func testMediaSelectionPrefersMergedFile() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try Data("a".utf8).write(to: dir.appendingPathComponent("mic.wav"))
+        try Data("b".utf8).write(to: dir.appendingPathComponent("system.wav"))
+        XCTAssertEqual(DriveSync.mediaFileNames(in: dir), ["mic.wav", "system.wav"])   // no merged yet
+        try Data("c".utf8).write(to: dir.appendingPathComponent("audio.m4a"))
+        XCTAssertEqual(DriveSync.mediaFileNames(in: dir), ["audio.m4a"])               // prefer merged
+    }
+
     func testSyncIsIdempotentOnceSynced() async throws {
         let store = try MeetingStore()
         let record = try store.indexPackage(at: goldenFixture)

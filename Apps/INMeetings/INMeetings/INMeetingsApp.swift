@@ -16,6 +16,7 @@ struct INMeetingsApp: App {
     @State private var detector: CallDetector
     @State private var recorder: RecordingController
     @State private var models: ModelManager
+    @State private var vadModel: ModelManager
     @State private var promptSettings: MeetingDetectionSettings
     @State private var promptCoordinator: MeetingPromptCoordinator
     @State private var drive: DriveAuth
@@ -28,6 +29,9 @@ struct INMeetingsApp: App {
         let models = ModelManager()
         _models = State(initialValue: models)
         models.ensureReady()   // download + verify the Hebrew model on first launch (Harvest 1)
+        let vadModel = ModelManager(entry: ModelCatalog.sileroVad)
+        _vadModel = State(initialValue: vadModel)
+        vadModel.ensureReady()   // tiny Silero VAD so the pipeline runs --vad (no silence hallucination)
         let settings = MeetingDetectionSettings()
         _promptSettings = State(initialValue: settings)
         let coordinator = MeetingPromptCoordinator(detector: detector, recorder: recorder, settings: settings)
@@ -45,10 +49,19 @@ struct INMeetingsApp: App {
                 Text("🔴 \(recorder.elapsedString)")
                     .monospacedDigit()
             } else {
-                Image(systemName: detector.state.status == .armed ? "waveform.circle.fill" : "waveform")
+                Image(systemName: detector.state.status == .armed ? "waveform.badge.mic" : "waveform")
             }
         }
         .menuBarExtraStyle(.menu)
+
+        Window("IN Meetings", id: "dashboard") {
+            DashboardWindow()
+        }
+        .windowResizability(.contentSize)
+
+        Settings {
+            AppSettingsView(settings: promptSettings, models: models, vadModels: vadModel, drive: drive)
+        }
     }
 }
 
@@ -59,8 +72,16 @@ private struct MenuContent: View {
     var settings: MeetingDetectionSettings
     var coordinator: MeetingPromptCoordinator
     var drive: DriveAuth
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
+        Button("Open Dashboard") {
+            NSApp.activate(ignoringOtherApps: true)   // LSUIElement menu-bar app: bring the window forward
+            openWindow(id: "dashboard")
+        }
+        .keyboardShortcut("d")
+        Divider()
+
         switch recorder.state {
         case .idle:
             switch detector.state.status {

@@ -22,6 +22,14 @@ public struct TranscriptPackage: Decodable, Sendable {
         public let end: Double
         public let speakerId: String
         public let confidence: Double?
+
+        public init(text: String, start: Double, end: Double, speakerId: String, confidence: Double?) {
+            self.text = text
+            self.start = start
+            self.end = end
+            self.speakerId = speakerId
+            self.confidence = confidence
+        }
     }
 
     public let meetingId: String?

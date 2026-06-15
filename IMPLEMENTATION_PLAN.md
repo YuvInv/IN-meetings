@@ -131,14 +131,17 @@ Promote P2+P3 prototypes into the app; wire P1's pipeline.
 - **Done when:** a real meeting is detected, recorded two-track, transcribed in Hebrew on-device,
   packaged, and synced to the team Drive — verified on an actual call (not just a build).
 
-### Phase 2 — The differentiator: context injection
-1. Context assembler (Calendar + Saventa + Dealigence → ranked vocabulary + `context.md` — ADR-004),
-   running parallel with capture; graceful degradation.
-2. Turn on **`initial_prompt` biasing** in the ASR (ADR-003) using the assembler's vocabulary; pin model
-   revision + add the prompt-following regression test.
-3. `metadata.json` enrichment (attendees with side, company + sevanta_deal_id, consent stub).
-- **Done when:** transcripts measurably improve on founder/company names vs Phase-1 unbiased, on the P1
-  eval set and on a live meeting.
+### Phase 2 — The differentiator: context injection (calendar-first)
+1. **Context assembler — calendar** (Google Calendar → deterministic post-correction vocab + `context.md`
+   + `metadata` enrichment — ADR-004, amended): match meeting→event, internal/external split, company from
+   external domains. **✅ Done + live-verified 2026-06-14 (PR #6).** Post-correction (NOT `initial_prompt`
+   — P1 disproved prompt biasing) with a curated core lexicon (the fund name) applied on every meeting.
+2. **ASR robustness**: silence-gating (`asr.is_silent`, done) + **VAD** to stop hallucination on
+   within-track silence (in progress), evaluated against the P1 eval set so WER doesn't regress.
+- **Saventa + Dealigence enrichment is OUT of the MVP → Phase 6** (deferred per Yuval 2026-06-14). Calendar
+  alone is the MVP's context layer.
+- **Done when:** transcripts measurably improve on company/fund names vs Phase-1 unbiased — ✅ on the P1
+  eval set + a live meeting.
 
 ### Phase 3 — Claude handoff + skill `--package` mode
 1. Implement the **`--package`** input mode + shared adapter in `~/repos/claude-skills`
@@ -159,6 +162,14 @@ Promote P2+P3 prototypes into the app; wire P1's pipeline.
 ### Phase 5 — Rollout to the team
 Signing + notarization; install on Eitan/Gil/Eyal's Macs; onboarding walk-through; **counsel review of
 ADR-010 items before broad use**; collect real-meeting feedback; tune the eval set.
+
+### Phase 6 — Post-MVP: CRM + Dealigence context enrichment (deferred 2026-06-14)
+Extend the context assembler with **Saventa** (`sevanta_search_deals` → deal id, stage, prior notes) and
+**Dealigence** (`search-company`/`search-person` → founder backgrounds, investors) — same Swift-fetch /
+Python-transform shape as the calendar slice, with Swift-owned API keys in Keychain. Sets
+`company.matched:true` + `sevanta_deal_id`/`dealigence_id`, adds founder priors to `context.md`, and supplies
+authoritative entity names to the post-correction vocab. **Pushed to the end of development** so the MVP
+ships on the calendar context layer alone.
 
 ---
 

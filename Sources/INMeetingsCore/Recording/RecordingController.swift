@@ -122,6 +122,16 @@ public final class RecordingController {
             }
             // Hand the recording to the transcription pipeline (ADR-009); record-time facts feed metadata.json.
             jobBridge.enqueue(result, startedAt: startedAt, endedAt: Date(), captureSourceApp: recordingSourceApp)
+            // Render the single merged playback file alongside transcription (it needs only the raw
+            // tracks). Best-effort: a failure leaves no audio.m4a and the dashboard degrades.
+            let dir = result.directory
+            let tracks = [result.mic, result.system].compactMap { $0 }
+            if !tracks.isEmpty {
+                Task.detached {
+                    try? await PlaybackRenderer().render(tracks: tracks,
+                                                         to: dir.appendingPathComponent(PlaybackRenderer.outputName))
+                }
+            }
             RecordingsStore.reveal(result.directory)
         }
     }
