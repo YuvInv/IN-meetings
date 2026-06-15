@@ -4,7 +4,12 @@ import SwiftUI
 import INMeetingsCore
 
 struct DashboardWindow: View {
-    @State private var storeModel = RecordingStore()
+    let drive: DriveAuth
+    @State private var storeModel: RecordingStore
+    init(drive: DriveAuth) {
+        self.drive = drive
+        _storeModel = State(initialValue: RecordingStore(drive: drive))
+    }
     var body: some View {
         NavigationSplitView {
             DashboardSidebar(selection: $storeModel.selection,

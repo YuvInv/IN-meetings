@@ -52,6 +52,10 @@
         "name": { "type": ["string", "null"] },
         "sevanta_deal_id": { "type": ["string", "null"] },
         "dealigence_id": { "type": ["string", "null"] },
+        "source": {
+          "type": ["string", "null"],
+          "description": "How the name was set: \"domain\" | \"title\" | \"user\". null when unset."
+        },
         "matched": { "type": "boolean" }
       }
     },

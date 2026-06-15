@@ -66,6 +66,7 @@ public struct MeetingMetadata: Decodable, Sendable {
         public let sevantaDealId: String?
         public let dealigenceId: String?
         public let matched: Bool
+        public let source: String?
     }
 
     public struct Recording: Decodable, Sendable {

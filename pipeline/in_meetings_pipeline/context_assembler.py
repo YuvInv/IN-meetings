@@ -13,6 +13,7 @@ fixed even with no calendar match.
 from __future__ import annotations
 
 import json
+import re
 import sys
 from collections import Counter
 from dataclasses import dataclass, field
@@ -124,18 +125,60 @@ def _company_name_from_domain(domain: str) -> str:
     return " ".join(part.capitalize() for part in label.replace("_", "-").split("-") if part)
 
 
-def resolve_company(attendees: list[Attendee], title: str | None) -> dict | None:
-    """Company = the dominant non-public external email domain; else None. matched:false (no CRM here).
+_FUND_NAMES = {"in venture", "in-venture", "inventure", "inv", "in"}
+_GENERIC_TITLE = {"weekly sync", "sync", "standup", "stand-up", "1:1", "catch up", "catch-up",
+                  "team", "internal", "check-in", "checkin", "meeting", "call", "intro",
+                  "introduction", "chat", "external"}
+_TITLE_SEPARATORS = [" <> ", " <-> ", " >< ", " / ", " | ", " – ", " — ", " - ", " x "]
+_INTRO_PREFIX = re.compile(
+    r"^\s*(?:intro|introduction|call|meeting|sync|chat)\b.*?\b(?:with|to|for)\s+(.+)$", re.I)
 
-    `title` is accepted for a future title-based fallback (slice 2); unused while domain resolution wins.
-    """
+
+def _internal_names(attendees: list[Attendee]) -> set[str]:
+    names = set(_FUND_NAMES)
+    for a in attendees:
+        if a.side == "internal" and a.name:
+            names.add(a.name.lower())
+            names.add(a.name.split()[0].lower())
+    return names
+
+
+def _is_company_like(cand: str, internal: set[str]) -> bool:
+    low = cand.lower()
+    return len(cand) >= 2 and low not in _GENERIC_TITLE and low not in internal
+
+
+def _company_from_title(title: str | None, internal: set[str]) -> str | None:
+    if not title:
+        return None
+    raw = title.strip()
+    for sep in _TITLE_SEPARATORS:
+        if sep in raw:
+            parts = [p.strip() for p in raw.split(sep) if p.strip()]
+            external = [p for p in parts if p.lower() not in internal]
+            if len(external) == 1 and _is_company_like(external[0], internal):
+                return external[0]
+            return None
+    m = _INTRO_PREFIX.match(raw)
+    if m and _is_company_like(m.group(1).strip(), internal):
+        return m.group(1).strip()
+    return None
+
+
+def resolve_company(attendees: list[Attendee], title: str | None) -> dict | None:
+    """Company = dominant external email domain; else a conservative title fallback; else None.
+    matched is always False here (no CRM); source records how the name was found."""
     domains = [d for a in attendees if a.side == "external"
                if (d := _domain(a.email)) and d not in _PUBLIC_DOMAINS]
-    if not domains:
-        return None
-    dominant = Counter(domains).most_common(1)[0][0]
-    return {"name": _company_name_from_domain(dominant),
-            "sevanta_deal_id": None, "dealigence_id": None, "matched": False}
+    if domains:
+        dominant = Counter(domains).most_common(1)[0][0]
+        return {"name": _company_name_from_domain(dominant), "sevanta_deal_id": None,
+                "dealigence_id": None, "matched": False, "source": "domain"}
+    name = _company_from_title(title, _internal_names(attendees))
+    if name:
+        return {"name": name, "sevanta_deal_id": None, "dealigence_id": None,
+                "matched": False, "source": "title"}
+    return None
 
 
 # --- vocabulary -------------------------------------------------------------

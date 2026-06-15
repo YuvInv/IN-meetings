@@ -22,6 +22,10 @@ private final class FakeUploader: DriveUploading, @unchecked Sendable {
         resumableUploads.append(name)
         return "file:\(name)"
     }
+
+    func uploadOrReplaceFile(name: String, mimeType: String, data: Data, parentID: String, driveId: String?) async throws -> String {
+        "replaced-\(name)"
+    }
 }
 
 final class DriveSyncTests: XCTestCase {

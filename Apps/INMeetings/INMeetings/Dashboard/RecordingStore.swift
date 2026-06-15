@@ -14,12 +14,29 @@ final class RecordingStore {
     var search: String = ""
 
     private let store: MeetingStore?
-    init(store: MeetingStore? = try? MeetingStore(url: MeetingStore.defaultURL)) {
+    private let drive: DriveAuth?
+    init(store: MeetingStore? = try? MeetingStore(url: MeetingStore.defaultURL), drive: DriveAuth? = nil) {
         self.store = store
+        self.drive = drive
         load()
     }
 
     func load() { meetings = (try? store?.allMeetings()) ?? [] }
+
+    /// Apply a manual company edit: rewrite metadata.json + index (CompanyEditor), refresh the list, and
+    /// (when the meeting is already on Drive) re-upload the corrected metadata.json.
+    func setCompany(_ name: String?, for meeting: MeetingRecord) {
+        guard let store else { return }
+        do {
+            let data = try CompanyEditor(store: store).setCompany(name, for: meeting)
+            load()
+            if let drive, drive.isConnected, let folderID = meeting.driveFolderId {
+                Task { await drive.reuploadMetadata(meetingFolderID: folderID, data: data) }
+            }
+        } catch {
+            NSLog("setCompany failed: \(error)")
+        }
+    }
 
     var filtered: [MeetingRecord] { filterMeetings(meetings, search: search) }
 

@@ -43,4 +43,13 @@ final class MeetingStoreTests: XCTestCase {
         XCTAssertEqual(fetched?.startedAt, "2026-05-12T14:30:00+03:00")
         XCTAssertEqual(fetched?.modelRevision, "ivrit-large-v3-turbo")
     }
+
+    func testUpdateCompanyChangesAndClearsTheRow() throws {
+        let store = try MeetingStore()
+        let rec = try store.indexPackage(at: fixture)
+        try store.updateCompany(id: rec.id, name: "Acme AI")
+        XCTAssertEqual(try store.meeting(id: rec.id)?.company, "Acme AI")
+        try store.updateCompany(id: rec.id, name: nil)
+        XCTAssertNil(try store.meeting(id: rec.id)?.company)
+    }
 }
