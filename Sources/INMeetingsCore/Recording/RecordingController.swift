@@ -164,9 +164,14 @@ public final class RecordingController {
             let tracks = trackOffsets.map(\.0)
             let offsets = trackOffsets.map(\.1)
             Task.detached {
-                let name = video != nil ? PlaybackRenderer.videoOutputName : PlaybackRenderer.outputName
-                try? await PlaybackRenderer().render(tracks: tracks, offsets: offsets, video: video,
-                                                     to: dir.appendingPathComponent(name))
+                let out = dir.appendingPathComponent(
+                    video != nil ? PlaybackRenderer.videoOutputName : PlaybackRenderer.outputName)
+                try? await PlaybackRenderer().render(tracks: tracks, offsets: offsets, video: video, to: out)
+                // meeting.mp4 now carries the picture (passthrough-copied) — drop the raw video.mov to
+                // reclaim disk immediately, once the mux actually produced the file.
+                if let video, FileManager.default.fileExists(atPath: out.path) {
+                    try? FileManager.default.removeItem(at: video)
+                }
             }
         }
         RecordingsStore.reveal(result.directory)

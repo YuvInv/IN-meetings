@@ -32,6 +32,12 @@ final class ScreenCaptureKitRecorder: NSObject, SCStreamOutput, SCStreamDelegate
         let systemOffset: Double?
     }
 
+    /// Capture sizing — a meeting doesn't need 4K/30fps. ~720p @ 15 fps @ 2 Mbps HEVC keeps faces +
+    /// screen-shares legible while a 22-min call is ~300 MB (vs ~1.9 GB at 2× retina / default bitrate).
+    static let maxVideoLongEdge = 1280
+    static let videoBitrate = 2_000_000
+    static let videoFPS: Int32 = 15
+
     private let directory: URL
     private let bundleID: String
     private var videoURL: URL { directory.appendingPathComponent("video.mov") }
@@ -73,24 +79,32 @@ final class ScreenCaptureKitRecorder: NSObject, SCStreamOutput, SCStreamDelegate
             throw CaptureError.callWindowNotFound(bundleID)
         }
 
-        let scale = 2.0
-        let w = Self.evenClamp(window.frame.width * scale, max: 3840)
-        let h = Self.evenClamp(window.frame.height * scale, max: 2160)
+        // Downscale to ~720p (long edge), never upscale — a meeting doesn't need the native 2×-retina size.
+        let longEdge = max(window.frame.width, window.frame.height)
+        let fit = min(1.0, CGFloat(Self.maxVideoLongEdge) / longEdge)
+        let w = Self.evenClamp(window.frame.width * fit, max: Self.maxVideoLongEdge)
+        let h = Self.evenClamp(window.frame.height * fit, max: Self.maxVideoLongEdge)
 
         let config = SCStreamConfiguration()
         config.capturesAudio = true            // system audio of the call window = "Them"
+        config.channelCount = 1                // mono — fine for ASR + meeting playback; halves the audio
         if #available(macOS 15.0, *) {
             config.captureMicrophone = true    // the user's mic = "Me" (delivered as a separate stream)
         }
         config.width = w
         config.height = h
-        config.minimumFrameInterval = CMTime(value: 1, timescale: 30)
+        config.minimumFrameInterval = CMTime(value: 1, timescale: Self.videoFPS)
         config.pixelFormat = kCVPixelFormatType_32BGRA
         config.queueDepth = 6
 
         let writer = try AVAssetWriter(outputURL: videoURL, fileType: .mov)
         let videoInput = AVAssetWriterInput(mediaType: .video, outputSettings: [
             AVVideoCodecKey: AVVideoCodecType.hevc, AVVideoWidthKey: w, AVVideoHeightKey: h,
+            AVVideoCompressionPropertiesKey: [
+                AVVideoAverageBitRateKey: Self.videoBitrate,
+                AVVideoExpectedSourceFrameRateKey: Self.videoFPS,
+                AVVideoMaxKeyFrameIntervalKey: Self.videoFPS * 4,
+            ],
         ])
         videoInput.expectsMediaDataInRealTime = true
         guard writer.canAdd(videoInput) else { throw CaptureError.videoWriterFailed(nil) }
