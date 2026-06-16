@@ -7,6 +7,7 @@ private final class FakeUploader: DriveUploading, @unchecked Sendable {
     var folderRequests: [String] = []
     var uploadedNames: [String] = []      // one-shot (text)
     var resumableUploads: [String] = []   // streamed (recordings)
+    var replacedNames: [String] = []      // upload-or-replace (summary.md re-upload)
 
     func findOrCreateFolder(name: String, parentID: String, driveId: String?) async throws -> String {
         folderRequests.append(name)
@@ -24,7 +25,8 @@ private final class FakeUploader: DriveUploading, @unchecked Sendable {
     }
 
     func uploadOrReplaceFile(name: String, mimeType: String, data: Data, parentID: String, driveId: String?) async throws -> String {
-        "replaced-\(name)"
+        replacedNames.append(name)
+        return "replaced-\(name)"
     }
 }
 
@@ -144,6 +146,32 @@ final class DriveSyncTests: XCTestCase {
         off.set(false, forKey: CaptureSettings.Keys.pruneRawTracksAfterBackup)
         DriveSync.pruneRawTracksIfEnabled(in: disabled, defaults: off)
         XCTAssertTrue(fm.fileExists(atPath: disabled.appendingPathComponent("mic.wav").path))
+    }
+
+    func testSyncSummaryReuploadsOnlySummaryToExistingFolder() async throws {
+        let store = try MeetingStore()
+        let fake = FakeUploader()
+        let sync = DriveSync(client: fake, store: store)
+
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("sum-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try FileManager.default.copyItem(at: goldenFixture.appendingPathComponent("metadata.json"),
+                                         to: dir.appendingPathComponent("metadata.json"))
+        let record = try store.indexPackage(at: dir)
+        try "**Team**\n>X".write(to: dir.appendingPathComponent("summary.md"), atomically: true, encoding: .utf8)
+
+        // Never synced yet (no driveFolderId) → no-op.
+        let early = try await sync.syncSummary(meetingID: record.id, packageFolder: dir, into: location)
+        XCTAssertFalse(early)
+        XCTAssertTrue(fake.replacedNames.isEmpty)
+
+        // Once the package is synced (folder id set), re-upload only summary.md via upload-or-replace.
+        try store.setSyncState(id: record.id, driveFolderId: "folder:meeting", syncState: "synced")
+        let ok = try await sync.syncSummary(meetingID: record.id, packageFolder: dir, into: location)
+        XCTAssertTrue(ok)
+        XCTAssertEqual(fake.replacedNames, ["summary.md"])
+        XCTAssertTrue(fake.uploadedNames.isEmpty)            // no full re-sync, just the one file
     }
 
     func testSyncIsIdempotentOnceSynced() async throws {

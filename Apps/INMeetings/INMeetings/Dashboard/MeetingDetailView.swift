@@ -21,6 +21,7 @@ struct MeetingDetailView: View {
     var body: some View {
         VStack(spacing: 0) {
             header; Divider()
+            summaryPanel
             if isVideo, let player {
                 PlayerView(player: player)
                     .frame(height: 260)
@@ -74,6 +75,58 @@ struct MeetingDetailView: View {
                             in: Capsule())
             }
             Spacer()
+        }
+    }
+    /// The post-meeting Claude summary (saventa-summary auto-trigger). Spinner while running; the
+    /// paste-ready note when done (Copy / Re-summarize); the error + Retry on failure; or a Summarize
+    /// button for a transcribed meeting that hasn't been summarized.
+    @ViewBuilder private var summaryPanel: some View {
+        switch meeting.summaryState ?? "" {
+        case "running":
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text("Generating summary…").font(.callout).foregroundStyle(.secondary)
+                Spacer()
+            }.padding(.horizontal).padding(.vertical, 8)
+            Divider()
+        case "done":
+            if let text = store.summaryText(for: meeting) {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Label("Summary", systemImage: "sparkles").font(.headline)
+                        Spacer()
+                        Button { copySummary(text) } label: { Label("Copy", systemImage: "doc.on.doc") }
+                            .buttonStyle(.glass).controlSize(.small)
+                        Button { store.summarize(meeting) } label: {
+                            Label("Re-summarize", systemImage: "arrow.clockwise")
+                        }.buttonStyle(.glass).controlSize(.small)
+                    }
+                    ScrollView {
+                        Text(text).font(.system(.body, design: .monospaced)).textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }.frame(maxHeight: 220)
+                }.padding(.horizontal).padding(.vertical, 8)
+                Divider()
+            }
+        case "failed":
+            HStack(spacing: 8) {
+                Image(systemName: "exclamationmark.triangle").foregroundStyle(.orange)
+                Text(meeting.summaryError ?? "Summary failed.").font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Button("Retry") { store.summarize(meeting) }.buttonStyle(.glass).controlSize(.small)
+            }.padding(.horizontal).padding(.vertical, 8)
+            Divider()
+        default:
+            if meeting.status == "transcribed" {
+                HStack(spacing: 8) {
+                    Image(systemName: "sparkles").foregroundStyle(.secondary)
+                    Text("No summary yet.").font(.callout).foregroundStyle(.secondary)
+                    Spacer()
+                    Button { store.summarize(meeting) } label: { Label("Summarize", systemImage: "sparkles") }
+                        .buttonStyle(.glassProminent).controlSize(.small)
+                }.padding(.horizontal).padding(.vertical, 8)
+                Divider()
+            }
         }
     }
     private var header: some View {
@@ -161,6 +214,9 @@ struct MeetingDetailView: View {
     }
     private func copyTranscript() {
         let text = (pkg?.utterances ?? []).map(\.text).joined(separator: "\n")
+        NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string)
+    }
+    private func copySummary(_ text: String) {
         NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string)
     }
     private func commitCompany() {

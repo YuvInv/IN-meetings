@@ -94,4 +94,33 @@ final class MeetingStoreTests: XCTestCase {
         XCTAssertNil(try store.meeting(id: "golden-package")?.pipelineError)
         XCTAssertEqual(try store.allMeetings().count, 1)           // same id, upserted (not duplicated)
     }
+
+    // MARK: - Saventa-summary auto-trigger state (migration v3)
+
+    func testSummaryStateDefaultsNilThenUpdates() throws {
+        let store = try MeetingStore()
+        let rec = try store.indexPackage(at: fixture)
+        XCTAssertNil(rec.summaryState)              // a freshly-indexed meeting has no summary yet
+        XCTAssertNil(try store.meeting(id: rec.id)?.summarySessionId)
+
+        try store.updateSummaryState(id: rec.id, state: "running")
+        XCTAssertEqual(try store.meeting(id: rec.id)?.summaryState, "running")
+
+        try store.updateSummaryState(id: rec.id, state: "done", sessionId: "sess-123")
+        let done = try store.meeting(id: rec.id)
+        XCTAssertEqual(done?.summaryState, "done")
+        XCTAssertNil(done?.summaryError)
+        XCTAssertEqual(done?.summarySessionId, "sess-123")
+    }
+
+    func testSummaryFailedCarriesErrorAndKeepsSessionId() throws {
+        let store = try MeetingStore()
+        let rec = try store.indexPackage(at: fixture)
+        try store.updateSummaryState(id: rec.id, state: "done", sessionId: "sess-abc")
+        try store.updateSummaryState(id: rec.id, state: "failed", error: "claude not found")
+        let row = try store.meeting(id: rec.id)
+        XCTAssertEqual(row?.summaryState, "failed")
+        XCTAssertEqual(row?.summaryError, "claude not found")
+        XCTAssertEqual(row?.summarySessionId, "sess-abc")   // COALESCE preserves the prior session id
+    }
 }

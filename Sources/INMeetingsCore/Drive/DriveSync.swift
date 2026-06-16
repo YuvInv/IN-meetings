@@ -29,8 +29,10 @@ public final class DriveSync: @unchecked Sendable {
         self.store = store
     }
 
-    /// Small text files — uploaded in one request each.
-    static let textFileNames = ["metadata.json", "transcript.json", "transcript.txt", "context.md", "slides_ocr.md"]
+    /// Small text files — uploaded in one request each. `summary.md` is written *after* this sync runs
+    /// (the saventa-summary auto-trigger fires post-pipeline), so it's skipped here and re-uploaded by
+    /// `syncSummary`; listing it keeps any later full re-sync complete.
+    static let textFileNames = ["metadata.json", "transcript.json", "transcript.txt", "context.md", "slides_ocr.md", "summary.md"]
 
     /// The single merged playback artifact, preferred over the raw tracks. A video call muxes into
     /// `meeting.mp4` (video + audio = the whole experience); an audio meeting mixes into `audio.m4a`.
@@ -109,5 +111,20 @@ public final class DriveSync: @unchecked Sendable {
         try store.setSyncState(id: meetingID, driveFolderId: meetingFolderID, syncState: "synced")
         Self.pruneRawTracksIfEnabled(in: packageFolder)   // reclaim disk now the merged file is on Drive
         return DriveSyncResult(meetingFolderID: meetingFolderID, uploaded: uploaded)
+    }
+
+    /// Re-upload just `summary.md` to a meeting's existing Drive folder — used after the saventa-summary
+    /// auto-trigger writes it (the main package was already synced when the pipeline finished). No-op if
+    /// the meeting was never synced (no folder id) or `summary.md` is absent. Idempotent
+    /// (`uploadOrReplaceFile` replaces an existing copy), so a re-summarize cleanly overwrites.
+    @discardableResult
+    public func syncSummary(meetingID: String, packageFolder: URL, into location: DriveLocation) async throws -> Bool {
+        guard let record = try store.meeting(id: meetingID), let folderID = record.driveFolderId else { return false }
+        let url = packageFolder.appendingPathComponent("summary.md")
+        guard let data = try? Data(contentsOf: url) else { return false }
+        _ = try await client.uploadOrReplaceFile(
+            name: "summary.md", mimeType: Self.mimeType(for: "summary.md"),
+            data: data, parentID: folderID, driveId: location.driveID)
+        return true
     }
 }
