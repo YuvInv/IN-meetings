@@ -54,12 +54,18 @@ Models live in `~/Library/Application Support/IN Meetings/Models/`.
   permission, enable IN Meetings, and **relaunch** (the grant takes effect on the next launch — until then
   capture quietly degrades to audio-only).
 
-### B1 — Golden path: capture → mux → playback
-1. Join a call with its window visible. Record (the "Record now" card, or ⌃⌥⌘R). Talk ~30 s; share a
-   screen if you can. Stop.
-2. **Reveal Last Recording** → *expect:* `video.mov` exists; within a few seconds `meeting.mp4` appears.
-3. Open the meeting in the dashboard → *expect:* a **video player** at the top shows the call window, with
-   audio **in sync**. Tapping a transcript line still seeks. (`metadata.json` has `"video": true`.)
+### B1 — Golden path: capture → mux → playback **(now unified ScreenCaptureKit capture)**
+> As of 2026-06-16 a video call captures screen + system audio + mic through **one** SCK stream (one
+> clock), so A/V sync is the headline check. `mic.wav`/`system.wav`/`video.mov` are unchanged on disk.
+1. Join a call with its window visible. Record (the "Record now" card, or ⌃⌥⌘R). Talk ~30 s, and make sure
+   the **remote side also speaks** (so we can confirm "Them" is captured); share a screen if you can. Stop.
+2. **Reveal Last Recording** → *expect:* `mic.wav`, `system.wav`, `video.mov` all present; within a few
+   seconds `meeting.mp4` appears.
+3. Open the meeting → *expect:* the video player shows the call window and **audio is in sync** (lip-sync
+   holds for the whole clip, start to end — this is what the rewrite fixes). Tapping a transcript line seeks.
+4. **Both sides transcribed?** *expect:* the transcript has **your** speech *and* the **remote** speech
+   (confirms SCK's window-scoped `.audio` captured "Them" as well as the old Core-Audio tap did — the one
+   thing only a live call can prove). If "Them" is missing/empty, tell me — we keep the tap path as fallback.
 
 ### B2 — Drive upload + retention
 1. With Drive connected and a folder chosen (§C), let the meeting finish.
@@ -116,8 +122,8 @@ Models live in `~/Library/Application Support/IN Meetings/Models/`.
 ---
 
 ## Known limitations (by design, this round)
-- **A/V sync** aligns audio + video at t=0 (both start within the same Start press). Tiny skew is possible;
-  flag it only if it's clearly off — precise-timestamp alignment is a planned refinement.
+- **A/V sync** is now established at capture via one ScreenCaptureKit clock + real timestamps (the t=0 merge
+  is gone). If sync is still off on a long call, that points to SCK audio gaps — flag it.
 - **Screen Recording grant** applies on the **next launch**, so the *first* call after granting may be
   audio-only.
 - **Retention** prunes raw tracks only *after* a successful Drive backup and only when a merged file exists;
