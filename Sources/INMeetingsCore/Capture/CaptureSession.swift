@@ -17,9 +17,14 @@ public final class CaptureSession {
         public let systemPeakDB: Float?
         /// The call-window video (`video.mov`), when video capture was on and produced frames; else nil.
         public let video: URL?
+        /// A/V start offsets (seconds) of each audio track relative to the first video frame, on the
+        /// unified-capture clock — so the playback mux aligns at the real offset, not t=0. nil with no video.
+        public let micOffset: Double?
+        public let systemOffset: Double?
 
         public init(profile: CaptureProfile, directory: URL, mic: URL?, system: URL?,
-                    micPeakDB: Float, systemPeakDB: Float?, video: URL? = nil) {
+                    micPeakDB: Float, systemPeakDB: Float?, video: URL? = nil,
+                    micOffset: Double? = nil, systemOffset: Double? = nil) {
             self.profile = profile
             self.directory = directory
             self.mic = mic
@@ -27,6 +32,8 @@ public final class CaptureSession {
             self.micPeakDB = micPeakDB
             self.systemPeakDB = systemPeakDB
             self.video = video
+            self.micOffset = micOffset
+            self.systemOffset = systemOffset
         }
 
         /// True if the system track only ever saw digital silence (System Audio Recording not effective,
@@ -43,7 +50,7 @@ public final class CaptureSession {
     private let videoBundleID: String?
     private var mic: MicRecorder?
     private var systemTap: SystemAudioTap?
-    private var videoRecorder: ScreenCaptureKitRecorder?
+    private var callRecorder: ScreenCaptureKitRecorder?
 
     public init(profile: CaptureProfile, directory: URL, videoBundleID: String? = nil) {
         self.profile = profile
@@ -51,16 +58,28 @@ public final class CaptureSession {
         self.videoBundleID = videoBundleID
     }
 
-    /// Creates the output folder and starts the tracks. Audio (mic + system tap) is critical and rolls
-    /// back on failure; the call-window video is best-effort — a Screen-Recording denial or a missing
-    /// window logs and degrades to audio-only rather than failing the recording.
+    /// Creates the output folder and starts capture. A **video call** runs one ScreenCaptureKit stream
+    /// (screen + system + mic on one clock) so the merged file is A/V-synced by construction (amends
+    /// ADR-002); if that can't start it falls back to the audio path. **In-person / call-without-video**
+    /// use the audio path: mic via AVAudioEngine (+ system via the Core Audio tap for calls), no Screen
+    /// Recording. Audio is critical (rolls back on failure); video is best-effort.
     public func start() async throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        if profile == .call, let videoBundleID {
+            let recorder = ScreenCaptureKitRecorder(directory: directory, bundleID: videoBundleID)
+            do {
+                try await recorder.start()
+                callRecorder = recorder
+                return   // unified path writes mic.wav + system.wav + video.mov itself
+            } catch {
+                captureLog.error("unified capture failed, falling back to audio-only: \((error as? CaptureError)?.description ?? error.localizedDescription, privacy: .public)")
+            }
+        }
 
         let micRec = MicRecorder(outputURL: directory.appendingPathComponent("mic.wav"))
         try micRec.start()
         mic = micRec
-
         if profile == .call {
             let tap = SystemAudioTap(outputURL: directory.appendingPathComponent("system.wav"))
             do {
@@ -71,26 +90,23 @@ public final class CaptureSession {
                 throw error
             }
             systemTap = tap
-
-            if let videoBundleID {
-                let recorder = ScreenCaptureKitRecorder(
-                    outputURL: directory.appendingPathComponent("video.mov"), bundleID: videoBundleID)
-                do {
-                    try await recorder.start()
-                    videoRecorder = recorder
-                } catch {
-                    captureLog.error("video.start skipped: \((error as? CaptureError)?.description ?? error.localizedDescription, privacy: .public)")
-                }
-            }
         }
     }
 
-    /// Stops the tracks (flushing the WAVs, finalizing the video) and reports what was captured.
+    /// Stops capture (flushing the WAVs, finalizing the video) and reports what was captured + the A/V
+    /// offsets (unified path only).
     @discardableResult
     public func stop() async -> Result {
+        if let callRecorder {
+            let out = await callRecorder.stop()
+            self.callRecorder = nil
+            return Result(profile: profile, directory: directory,
+                          mic: out.mic, system: out.system,
+                          micPeakDB: out.micPeakDB, systemPeakDB: out.systemPeakDB,
+                          video: out.video, micOffset: out.micOffset, systemOffset: out.systemOffset)
+        }
         mic?.stop()
         systemTap?.stop()
-        let videoURL = await videoRecorder?.stop()
         let result = Result(
             profile: profile,
             directory: directory,
@@ -98,10 +114,9 @@ public final class CaptureSession {
             system: systemTap?.outputURL,
             micPeakDB: mic?.peakDB ?? -120,
             systemPeakDB: systemTap?.peakDB,
-            video: videoURL)
+            video: nil)
         mic = nil
         systemTap = nil
-        videoRecorder = nil
         return result
     }
 }

@@ -49,6 +49,20 @@ final class PlaybackRendererTests: XCTestCase {
         XCTAssertEqual(tracks.filter { $0.mediaType == .audio }.count, 1)   // + the balanced audio
     }
 
+    /// The A/V sync fix: a track given a +0.5s offset is placed 0.5s into the timeline, so a 1s+1s pair
+    /// spans 1.5s (not merged at t=0). Proves the unified-capture offsets are honored by the mux.
+    func testRenderAppliesPerTrackOffset() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let a = try writeSine(dir.appendingPathComponent("a.wav"), seconds: 1.0, freq: 220, rate: 48000)
+        let b = try writeSine(dir.appendingPathComponent("b.wav"), seconds: 1.0, freq: 440, rate: 48000)
+        let out = dir.appendingPathComponent("audio.m4a")
+        try await PlaybackRenderer().render(tracks: [a, b], offsets: [0, 0.5], to: out)
+        let dur = try await AVURLAsset(url: out).load(.duration)
+        XCTAssertEqual(dur.seconds, 1.5, accuracy: 0.12)   // 0.5s offset shifts the second track out
+    }
+
     /// Writes a short H.264 video (solid black frames) at `url` via AVAssetWriter, returning the URL.
     private func writeBlankVideo(_ url: URL, seconds: Double, fps: Int32 = 10,
                                  size: CGSize = CGSize(width: 160, height: 120)) async throws -> URL {

@@ -38,8 +38,10 @@ public struct PlaybackRenderer: Sendable {
 
     /// Mix the audio tracks into `output`, level-balanced; when `video` is given, mux it in too so the
     /// output is one watchable `meeting.mp4` (window video + balanced audio). One audio track → no
-    /// balancing. Audio and video both start at t=0 (they were captured together within the same Start).
-    public func render(tracks: [URL], video: URL? = nil, to output: URL) async throws {
+    /// balancing. `offsets[i]` is the start of `tracks[i]` relative to the video (seconds, from the
+    /// unified-capture clock) — each track is placed at its real offset so A/V stays in sync (the fix for
+    /// the old t=0 merge). Absent/empty offsets → 0 (the audio-only / single-clock case).
+    public func render(tracks: [URL], offsets: [Double] = [], video: URL? = nil, to output: URL) async throws {
         let composition = AVMutableComposition()
         let audioMix = AVMutableAudioMix()
         var params: [AVMutableAudioMixInputParameters] = []
@@ -53,7 +55,14 @@ public struct PlaybackRenderer: Sendable {
                   let dst = composition.addMutableTrack(withMediaType: .audio,
                                                         preferredTrackID: kCMPersistentTrackID_Invalid) else { continue }
             let dur = try await asset.load(.duration)
-            try dst.insertTimeRange(CMTimeRange(start: .zero, duration: dur), of: src, at: .zero)
+            // Align to the video timeline: a track that started AFTER the video goes in at `+offset`; one
+            // that started BEFORE has its leading `-offset` trimmed so its t=0 lines up with the video's.
+            let offset = i < offsets.count ? offsets[i] : 0
+            let sourceStart = offset < 0 ? CMTime(seconds: -offset, preferredTimescale: 600) : .zero
+            let insertAt = offset > 0 ? CMTime(seconds: offset, preferredTimescale: 600) : .zero
+            let length = CMTimeSubtract(dur, sourceStart)
+            guard CMTimeCompare(length, .zero) > 0 else { continue }
+            try dst.insertTimeRange(CMTimeRange(start: sourceStart, duration: length), of: src, at: insertAt)
             let p = AVMutableAudioMixInputParameters(track: dst)
             p.setVolume(volumes[i], at: .zero)
             params.append(p)
