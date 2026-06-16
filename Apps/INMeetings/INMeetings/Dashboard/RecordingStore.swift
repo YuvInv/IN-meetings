@@ -52,6 +52,24 @@ final class RecordingStore {
     func transcript(for r: MeetingRecord) -> TranscriptPackage? {
         try? PackageReader.transcript(in: URL(fileURLWithPath: r.folderPath))
     }
+    func metadata(for r: MeetingRecord) -> MeetingMetadata? {
+        try? PackageReader.metadata(in: URL(fileURLWithPath: r.folderPath))
+    }
+
+    /// Assign (or clear, when `name` is nil) a diarized speaker's display name in transcript.json, refresh
+    /// the view, and (when the meeting is on Drive) re-upload the corrected transcript.
+    func renameSpeaker(_ name: String?, email: String?, speakerId: String, for meeting: MeetingRecord) {
+        do {
+            let data = try SpeakerEditor.setName(name, email: email, speakerId: speakerId,
+                                                 in: URL(fileURLWithPath: meeting.folderPath))
+            load()
+            if let drive, drive.isConnected, let folderID = meeting.driveFolderId {
+                Task { await drive.reuploadPackageFile("transcript.json", data: data, meetingFolderID: folderID) }
+            }
+        } catch {
+            NSLog("renameSpeaker failed: \(error)")
+        }
+    }
     /// The merged playback file for a meeting: the muxed video (`meeting.mp4`) if present, else the mixed
     /// audio (`audio.m4a`). nil until the renderer has produced one.
     func playbackURL(for r: MeetingRecord) -> URL? {
