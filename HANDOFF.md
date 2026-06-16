@@ -6,7 +6,7 @@ Keep it short: last state, next steps, gotchas. History lives in git log.
 -->
 
 ## Outgoing Agent
-Claude Code · 2026-06-15
+Claude Code · 2026-06-16
 
 ## Current State
 **MVP spine is complete and merged to `main` (App UX slice 1 = PR #7, `46e5fe9`); local `main` synced.**
@@ -34,37 +34,65 @@ SQLite index → per-user Google Drive backup → Liquid Glass dashboard (browse
   scripts before the cert exists.**
 
 ## Next — START HERE
-**2026-06-15 session 2:** built **three slices on branch `feat/reliability-video-drive-picker`** (3 atomic
-commits, NOT pushed/PR'd): **P0 reliability** (`56642b0`), **P1 call video** (`2ba876e`), **P1 Drive folder
-picker** (`880f8cf`). All green: **Core 76 tests, pipeline 54, `make build-mac`, app launches clean.**
-**⏳ The live behaviours are unverified — run `docs/manual-tests-reliability-video-picker.md` on Yuval's Mac.**
-**One external blocker:** the Drive picker needs a **Google Picker browser API key** in GCP project
-`1062382667236` (set `GOOGLE_PICKER_API_KEY` / `DriveConfig.pickerAPIKeyDefault`) — until then the picker
-sheet shows setup steps. **Pushed + opened [PR #10](https://github.com/YuvInv/IN-meetings/pull/10).**
 
-**2026-06-16 session 3 (live testing → fixes, on the same branch):** picker + video-capture + the
-video-detail **crash fix** (`baa0b31`: SwiftUI `VideoPlayer` → AppKit `AVPlayerView`) all **live-verified
-and already in PR #10**. **One follow-up committed locally, NOT pushed to PR #10 yet:** `71d2808`
-**A/V-sync rewrite** — a video call now captures screen+system+mic via **one ScreenCaptureKit stream** (one
-clock) instead of three independent clocks merged at t=0 (amends ADR-002; old tap path kept as fallback).
-77 Core tests + build green. **⏳ live-test the A/V rewrite on a real call** (sync holds + SCK `.audio`
-captures "Them") — `docs/manual-tests-reliability-video-picker.md` §B. The **Picker API key is in the
-working tree, deliberately uncommitted** (out of git/PR). Decide: push `71d2808` into PR #10 (the A/V fix
-supersedes PR #10's t=0 video) vs a follow-up PR.
+**Shipped + MERGED to `main` (2026-06-16):** [PR #10](https://github.com/YuvInv/IN-meetings/pull/10) **+
+[PR #11](https://github.com/YuvInv/IN-meetings/pull/11) BOTH MERGED.** #10 = P0 reliability (VAD bundled +
+pipeline failures surfaced), P1 call video (SCK window → `meeting.mp4` → Drive → playback), Drive folder
+picker (Google Picker web view), video-detail crash fix. #11 = A/V-sync rewrite (one SCK stream, one clock)
++ ~6× smaller recordings (720p / 2 Mbps HEVC passthrough mux, 1.86 GB→~300 MB) + speaker naming + the
+committed Picker key. All live-verified. **Local `main` synced to `origin/main` `7b3a8d0`.**
 
-- **P0 — trustworthy app:** (1) **hybrid app shell** ✅ DONE (`60b3546`); (2) onboarding / TCC wizard
-  (Mic + System-Audio + **Screen-Recording** + Google) — **unblocked, still TODO**; (3) **reliability pass**
-  ✅ CODE DONE (`56642b0`: VAD bundled+provisioned, failures surfaced) — **⏳ live-verify VAD on a real call
-  + multi-party 3+ diarization.**
-- **Ship (LAST):** Developer-ID sign + notarize + `.dmg` + launch-at-login + Sparkle — **deferred to the
-  end** + gated on Apple Developer enrollment (runbook `docs/distribution-setup.md`).
-- **P1 — value loop + video:** company-name inference + edit/rename UI ✅ (PR #9); **Claude auto-trigger →
-  Saventa CRM** (one-click; `--package` mode in `~/repos/claude-skills`) — **still TODO, the main value gap**;
-  **video** ✅ CODE DONE (`2ba876e`); retention cap ✅ CODE DONE (rides with video); **Drive folder picker**
-  ✅ CODE DONE (`880f8cf`, real Google Picker web view) + GCP key prereq.
-- **P2 — polish:** ring-buffer, auto-stop prompt, speaker naming, trash/export, settings depth.
-- **Out of scope for v1:** the in-app "AI overview" panel (the CRM *trigger* is in P1; the rich summary
-  surface is deferred).
+> ⚠️ **Branch-hygiene note (2026-06-16):** the prior session-wrap commit `5398a43` (this spec + the
+> DECISIONS / IMPLEMENTATION_PLAN / HANDOFF updates) sat on the **deleted** `feat/reliability-video-drive-picker`
+> tip and was **never merged** into `main` (PR #11 merged only up to `f1fe477`). Those 4 files were
+> **restored from `5398a43`** onto `feat/saventa-summary-autotrigger` (working tree), so they ride along in
+> this branch's PR. `main` on its own is missing them until this branch merges.
+
+**🟢 BUILT (code complete + end-to-end verified; pending UI live-test) on branch `feat/saventa-summary-autotrigger`: the `saventa-summary` auto-trigger.**
+Spec: `docs/superpowers/specs/2026-06-16-saventa-summary-autotrigger.md` (the **house-style file list is
+settled there** — the earlier open Q is resolved; use exactly that non-CRM vc-context set). Flow: meeting
+done → `JobBridge.indexCompletedPackage` kicks a new **`SummaryRunner`** → headless `claude -p` over the
+package, fed an **app-bundled recipe + house-style** via `--append-system-prompt` (**NOT** a globally-installed
+skill) → Claude writes `<folder>/summary.md` → dashboard "Summary" panel + Drive sync. Auto-on-finish
+(file-only, safe). **⚠️ Sevanta/CRM posting is ON HOLD — do NOT surface it.**
+- **Integration map (verified this session):** `JobBridge` (trigger after `driveBackup` in
+  `indexCompletedPackage`; reuse `.jobBridgeDidFinish` + a new `.summaryDidFinish`), `MeetingStore` (migration
+  **v3** adds `summaryState`/`summaryError`/`summarySessionId` + an `updateSummaryState(…)` method),
+  `DriveSync.textFileNames += "summary.md"` + `DriveAuth.reuploadPackageFile` (handle `.md` MIME),
+  `CaptureSettings.autoSummary` (default **on**), `MeetingDetailView` Summary panel. Recipe bundled under
+  `Apps/INMeetings/INMeetings/Resources/skills/saventa-summary/` (XcodeGen auto-bundles the `Resources` tree;
+  run `make gen` after adding files).
+- **Recipe source to vendor:** the **edited** installed SKILL.md at
+  `~/Library/Application Support/Claude/.../skills/saventa-summary/SKILL.md` (local-folder mode + writes
+  `summary.md`); house-style = `~/repos/claude-skills/vc-context/{critical-analysis,investment-thesis,
+  josh-preferences,writing-style}.md` + `vc-context/mom-examples/{anti-patterns,example-summary,
+  style-analysis}.md`. **Exclude** `crm-mappings.md` + `sevanta-api-reference.md`.
+
+**Build status (2026-06-16):** all 8 tasks done — vendored recipe + 7 house-style files (`Resources/skills/
+saventa-summary/`, bundled as an XcodeGen folder reference, **verified present in the built `.app`**);
+`MeetingStore` v3 (`summaryState`/`summaryError`/`summarySessionId` + `updateSummaryState`); `CaptureSettings.
+autoSummary` (default on); `SummaryRunner` (Core) + `DriveSync.syncSummary` / `DriveBackup.
+syncSummaryIfConfigured`; `JobBridge` auto-trigger (calls only, sequenced after Drive) + public `summarize(…)`;
+dashboard Summary panel + Settings toggle (jobBridge threaded App → DashboardWindow → RecordingStore). **Core
+`swift test` 90/90 green** (+8 SummaryRunner/Drive), **`make build-mac` green**. **END-TO-END VERIFIED:** a real
+`claude -p` run with the bundled recipe over the golden fixture wrote a correctly-formatted `summary.md`
+(literal asterisks preserved, transcript-only, blanks unpadded), exit 0, parseable `session_id`. **⏳ Still
+Yuval's live-test (needs the running app):** the dashboard Summary panel states + the full record→auto-summary
+flow on a real call → Drive. Checklist: `docs/manual-tests-saventa-summary.md`. **NOT committed yet.**
+
+**Roadmap changes this session (DECISIONS 2026-06-16 + IMPLEMENTATION_PLAN):**
+- **Auto-stop when a meeting ends → now a v1 MUST-HAVE** (P1, was P2). Debounced prompt, never silent (the
+  2026-06-14 decision). **Research how other recorders detect meeting-end** before designing.
+- **Upload an audio file for transcription → new MUST-HAVE, NOT P0** (P1). Import a file (e.g. a phone
+  recording) → normal pipeline → package → dashboard/Drive; no live capture. Design later.
+- **User-defined post-meeting skills → FUTURE, not designed yet.** A Settings surface for user-described
+  workflows; generalizes this saventa-summary trigger. Don't design now.
+
+**Remaining roadmap gaps:** onboarding / TCC wizard (Mic + System-Audio + **Screen-Recording** + Google —
+the adoption gate, still TODO); **Ship** phase (Developer-ID sign + notarize + `.dmg` + launch-at-login +
+Sparkle — done LAST, gated on a $99 Apple Developer account; runbook `docs/distribution-setup.md`); the new
+**auto-stop** + **audio-upload** must-haves; a global cache-size cap. The in-app "AI overview" panel stays
+out of v1. Hybrid app shell ✅ (PR #8); company naming+edit ✅ (PR #9).
 
 ## Gotchas (verified)
 - **The Google Calendar API must be enabled in the OAuth client's GCP project (1062382667236).** Enabled
@@ -97,8 +125,10 @@ supersedes PR #10's t=0 video) vs a follow-up PR.
   but the grant only takes effect on a **relaunch** (degrades to audio-only until then). Fold into onboarding.
 - **Drive picker GCP key** — provision the **Google Picker browser API key** in project `1062382667236`
   (enable the Google Picker API) so the web-view picker renders; `GOOGLE_PICKER_API_KEY` / `pickerAPIKeyDefault`.
-- **Company naming** (gap #2, P1): inference is calendar-external-domain only → "Unknown company" on no-match /
-  internal-only / fetch-fail; title + transcript fallbacks designed but unused; **no edit/rename UI** yet.
+- **Company naming** (gap #2, P1): edit/rename UI ✅ (PR #9). Inference is still calendar-external-domain only
+  → "Unknown company" on no-match / internal-only / fetch-fail; title + transcript fallbacks designed but unused.
+- **Saventa-summary auto-trigger** (active feature, designed): build `SummaryRunner` + the bundled recipe per
+  the spec; `summary.md` contract → dashboard panel + Drive. Live-verify `claude -p` runs the recipe headless.
 - (carried) per-company variant accumulation; fuzzy/edit-distance post-correct; calendars beyond `primary`;
   multiple internal domains (config).
 - (carried) retention: ✅ **prune raw tracks after Drive backup** (`2ba876e`, on by default, user-disablable);
@@ -111,5 +141,7 @@ supersedes PR #10's t=0 video) vs a follow-up PR.
   `Models/`, `meetings.db`); Google = per-user OAuth (client id in `DriveConfig`; scopes **drive +
   calendar.events.readonly**), each user connects their own account + picks the Drive destination.
 - Pipeline dev paths hardcoded in `JobBridge` (overridable via env); Phase 5 bundles the pipeline + a sealed env.
-- Downstream skills call the Timeless API directly today — the context package is a NEW contract (ADR-005); the
-  skills `--package` adapter (ADR-005 part 2) is the **P1 CRM-auto-trigger** work.
+- Downstream skills called the Timeless API directly — the context package is a NEW contract (ADR-005). The
+  `saventa-summary` skill now also reads a **local meeting folder** (edited 2026-06-16). The auto-trigger
+  (active feature) feeds Claude an **app-bundled** recipe + house style — **no skill install on each Mac**;
+  each Mac needs only `claude` installed + logged in. CRM posting is on hold.
