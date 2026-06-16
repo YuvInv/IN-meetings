@@ -22,7 +22,14 @@ targets:
     type: application
     supportedDestinations: [macOS]
     sources:
-      - INMeetings
+      - path: INMeetings
+        excludes:
+          - "Resources/skills"
+      # The saventa-summary recipe + house-style is bundled as a folder reference so its subdirectory
+      # structure (house-style/*.md) survives into the .app — SummaryRunner reads it from the bundle.
+      - path: INMeetings/Resources/skills
+        type: folder
+        buildPhase: resources
     dependencies:
       - package: INMeetingsCore
     settings:

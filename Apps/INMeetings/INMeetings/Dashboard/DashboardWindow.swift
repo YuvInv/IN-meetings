@@ -5,10 +5,12 @@ import INMeetingsCore
 
 struct DashboardWindow: View {
     let drive: DriveAuth
+    let jobBridge: JobBridge
     @State private var storeModel: RecordingStore
-    init(drive: DriveAuth) {
+    init(drive: DriveAuth, jobBridge: JobBridge) {
         self.drive = drive
-        _storeModel = State(initialValue: RecordingStore(drive: drive))
+        self.jobBridge = jobBridge
+        _storeModel = State(initialValue: RecordingStore(drive: drive, jobBridge: jobBridge))
     }
     var body: some View {
         NavigationSplitView {

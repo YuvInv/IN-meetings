@@ -28,6 +28,20 @@ public final class JobBridge {
     /// Phase-2 calendar context (ADR-004): fetched before spawn so the assembler has its input. No-op
     /// until the user connects a Google account (the same credential as Drive).
     @ObservationIgnored private lazy var calendarContext: CalendarContext? = CalendarContext()
+    /// Saventa-summary auto-trigger (ADR-008, amended): runs the app-bundled recipe via headless `claude -p`
+    /// after a finished call, writing summary.md + syncing it to Drive. nil when the recipe isn't bundled
+    /// (e.g. unit tests) → auto-summary no-ops. Shares the store; re-uploads summary.md via `driveBackup`.
+    @ObservationIgnored private lazy var summaryRunner: SummaryRunner? = {
+        guard let store, let resources = Self.bundledSummaryResourcesURL() else { return nil }
+        let backup = driveBackup
+        return SummaryRunner(
+            store: store, resourcesURL: resources,
+            syncSummary: backup.map { b in
+                { @Sendable (id: String, folder: URL) in
+                    await b.syncSummaryIfConfigured(meetingID: id, packageFolder: folder)
+                }
+            })
+    }()
 
     public init(pipelineDir: URL = JobBridge.defaultPipelineDir, python: URL = JobBridge.defaultPython) {
         self.pipelineDir = pipelineDir
@@ -48,6 +62,20 @@ public final class JobBridge {
         // The pipeline's pinned venv (Python 3.11 + senko, which requires <3.14 — system python3 is
         // 3.14 and can't import it). Phase 5 bundles a sealed env; until then this is the dev venv.
         return defaultPipelineDir.appendingPathComponent(".venv/bin/python")
+    }
+
+    /// The bundled saventa-summary recipe dir (`Resources/skills/saventa-summary` — recipe.md + house-style).
+    /// nil when not bundled (e.g. unit tests, where `Bundle.main` is the test runner) → auto-summary no-ops.
+    nonisolated static func bundledSummaryResourcesURL() -> URL? {
+        if let recipe = Bundle.main.url(forResource: "recipe", withExtension: "md",
+                                        subdirectory: "skills/saventa-summary") {
+            return recipe.deletingLastPathComponent()
+        }
+        if let res = Bundle.main.resourceURL {
+            let dir = res.appendingPathComponent("skills/saventa-summary")
+            if FileManager.default.fileExists(atPath: dir.appendingPathComponent("recipe.md").path) { return dir }
+        }
+        return nil
     }
 
     /// Write the job file and start the pipeline for a finished recording.
@@ -188,17 +216,37 @@ public final class JobBridge {
     /// Best-effort + idempotent: an index failure must not break the recording flow (the on-disk
     /// package is the durable source of truth, and re-indexing the same id just updates the row).
     private func indexCompletedPackage(at folder: URL) {
+        var meetingType: String?
         do {
             let record = try store?.indexPackage(at: folder)
+            meetingType = record?.type
             captureLog.notice("jobbridge.indexed meeting=\(record?.id ?? "?", privacy: .public)")
         } catch {
             captureLog.error("jobbridge.index failed: \(error.localizedDescription, privacy: .public)")
         }
-        // Write-through to Drive if the user has connected an account + chosen a location (best-effort,
-        // in the background; a no-op otherwise).
-        if let driveBackup {
-            Task { await driveBackup.syncIfConfigured(meetingID: folder.lastPathComponent, packageFolder: folder) }
+        let id = folder.lastPathComponent
+        // Auto-summarize finished *calls* when the toggle is on (file-only → safe to auto-run). In-person
+        // meetings can still be summarized manually from the dashboard.
+        let autoSummarize = meetingType == "call"
+            && CaptureSettings.bool(.standard, CaptureSettings.Keys.autoSummary, default: true)
+        // Write-through to Drive, *then* (for calls, if enabled) auto-summarize — sequenced in one task so
+        // the summary.md re-upload finds the Drive folder id the package sync just set. Both are
+        // best-effort + no-ops when unconfigured.
+        let backup = driveBackup
+        let runner = autoSummarize ? summaryRunner : nil
+        Task {
+            if let backup { await backup.syncIfConfigured(meetingID: id, packageFolder: folder) }
+            if let runner { await runner.run(meetingID: id, folder: folder) }
         }
+    }
+
+    /// Kick the saventa-summary run for a meeting — the dashboard's manual **Summarize** / **Retry** button
+    /// (the auto path above runs the same `SummaryRunner`, so runs stay serialized). Non-blocking; a no-op
+    /// if the recipe isn't bundled. The runner updates the index, posts `.summaryDidFinish`, and re-uploads
+    /// summary.md to Drive on success.
+    public func summarize(meetingID: String, folder: URL) {
+        guard let summaryRunner else { return }
+        Task { await summaryRunner.run(meetingID: meetingID, folder: folder) }
     }
 
     /// Record a pipeline failure in the index (reliability pass) so the dashboard can show it instead of

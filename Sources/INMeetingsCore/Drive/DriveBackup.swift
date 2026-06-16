@@ -44,4 +44,17 @@ public final class DriveBackup: @unchecked Sendable {
             try? meetingStore.setSyncState(id: meetingID, driveFolderId: nil, syncState: "failed")
         }
     }
+
+    /// Re-upload just `summary.md` after the saventa-summary auto-trigger writes it (the main package was
+    /// already synced when the pipeline finished). No-op until Drive is configured; best-effort.
+    public func syncSummaryIfConfigured(meetingID: String, packageFolder: URL) async {
+        guard tokenStore.load() != nil, let location = locationStore.load() else { return }
+        do {
+            if try await sync.syncSummary(meetingID: meetingID, packageFolder: packageFolder, into: location) {
+                driveLog.notice("drive summary \(meetingID, privacy: .public) uploaded")
+            }
+        } catch {
+            driveLog.error("drive summary upload failed for \(meetingID, privacy: .public): \(error.localizedDescription, privacy: .public)")
+        }
+    }
 }

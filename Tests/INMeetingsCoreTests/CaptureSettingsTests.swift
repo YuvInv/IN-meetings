@@ -9,6 +9,7 @@ final class CaptureSettingsTests: XCTestCase {
         let s = CaptureSettings(defaults: freshDefaults())
         XCTAssertTrue(s.recordCallVideo)              // video on by default for calls
         XCTAssertTrue(s.pruneRawTracksAfterBackup)    // reclaim disk by default
+        XCTAssertTrue(s.autoSummary)                  // auto-summarize finished calls by default
     }
 
     func testChangesPersistAcrossReload() {
@@ -16,9 +17,11 @@ final class CaptureSettingsTests: XCTestCase {
         let s = CaptureSettings(defaults: d)
         s.recordCallVideo = false
         s.pruneRawTracksAfterBackup = false
+        s.autoSummary = false
         let reloaded = CaptureSettings(defaults: d)
         XCTAssertFalse(reloaded.recordCallVideo)
         XCTAssertFalse(reloaded.pruneRawTracksAfterBackup)
+        XCTAssertFalse(reloaded.autoSummary)
     }
 
     func testBoolHelperTreatsUnsetAsDefault() {

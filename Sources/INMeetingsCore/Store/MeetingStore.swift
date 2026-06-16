@@ -135,6 +135,22 @@ public final class MeetingStore {
         }
     }
 
+    /// Set the saventa-summary run state ("running" / "done" / "failed") with an optional error and the
+    /// `claude -p` session id. `SummaryRunner` calls this; the dashboard observes the resulting row. The
+    /// session id is preserved (COALESCE) when a later transition passes nil, so a "running" → "done" pair
+    /// keeps whatever id was captured.
+    public func updateSummaryState(id: String, state: String?, error: String? = nil,
+                                   sessionId: String? = nil) throws {
+        try dbQueue.write { db in
+            try db.execute(
+                sql: """
+                UPDATE meeting SET summaryState = ?, summaryError = ?, \
+                summarySessionId = COALESCE(?, summarySessionId) WHERE id = ?
+                """,
+                arguments: [state, error, sessionId, id])
+        }
+    }
+
     // MARK: - Schema
 
     private static var migrator: DatabaseMigrator {
@@ -168,6 +184,15 @@ public final class MeetingStore {
                 t.add(column: "pipelineError", .text)
             }
         }
+        migrator.registerMigration("v3-summary-state") { db in
+            // The post-meeting Claude summary (saventa-summary auto-trigger). `SummaryRunner` sets these;
+            // the dashboard reads them. All nullable — a meeting with no summary leaves them nil.
+            try db.alter(table: MeetingRecord.databaseTableName) { t in
+                t.add(column: "summaryState", .text)       // "running" | "done" | "failed"
+                t.add(column: "summaryError", .text)        // set only when summaryState == "failed"
+                t.add(column: "summarySessionId", .text)    // claude -p session id, for a later --resume
+            }
+        }
         return migrator
     }
 }
@@ -196,4 +221,11 @@ public struct MeetingRecord: Codable, FetchableRecord, PersistableRecord, Sendab
     public var syncState: String
     /// Non-nil only when `status == "failed"`: the pipeline error to show in the dashboard.
     public var pipelineError: String?
+    /// The saventa-summary auto-trigger state: "running" | "done" | "failed" (nil = never run). Defaulted
+    /// so the existing `MeetingRecord(...)` call sites (index / markFailed) compile unchanged.
+    public var summaryState: String? = nil
+    /// Set only when `summaryState == "failed"`: the summary error to show in the dashboard.
+    public var summaryError: String? = nil
+    /// The `claude -p` session id from the summary run, so a later "ask a follow-up" can `--resume`.
+    public var summarySessionId: String? = nil
 }

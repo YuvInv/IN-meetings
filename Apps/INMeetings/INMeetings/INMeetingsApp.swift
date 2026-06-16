@@ -54,7 +54,7 @@ struct INMeetingsApp: App {
         .menuBarExtraStyle(.menu)
 
         Window("IN Meetings", id: "dashboard") {
-            DashboardWindow(drive: drive)
+            DashboardWindow(drive: drive, jobBridge: recorder.jobBridge)
         }
         .windowResizability(.contentSize)
 

@@ -15,19 +15,26 @@ final class RecordingStore {
 
     private let store: MeetingStore?
     private let drive: DriveAuth?
-    @ObservationIgnored private var finishObserver: NSObjectProtocol?
-    init(store: MeetingStore? = try? MeetingStore(url: MeetingStore.defaultURL), drive: DriveAuth? = nil) {
+    /// The recorder's `JobBridge` — used to kick the saventa-summary run for the manual Summarize / Retry
+    /// button (the same runner the auto-trigger uses, so runs stay serialized). nil in previews/tests.
+    @ObservationIgnored private let jobBridge: JobBridge?
+    @ObservationIgnored private var observers: [NSObjectProtocol] = []
+    init(store: MeetingStore? = try? MeetingStore(url: MeetingStore.defaultURL),
+         drive: DriveAuth? = nil, jobBridge: JobBridge? = nil) {
         self.store = store
         self.drive = drive
+        self.jobBridge = jobBridge
         load()
-        // Reload when a pipeline job finishes or fails (JobBridge posts this) so newly-done and failed
-        // meetings appear live, without the user reopening the window.
-        finishObserver = NotificationCenter.default.addObserver(
-            forName: .jobBridgeDidFinish, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.load() }
+        // Reload when a pipeline job finishes/fails (JobBridge) or a summary completes (SummaryRunner) so
+        // newly-done, failed, and summarized meetings appear live without reopening the window.
+        for name in [Notification.Name.jobBridgeDidFinish, .summaryDidFinish] {
+            observers.append(NotificationCenter.default.addObserver(
+                forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.load() }
+            })
         }
     }
-    deinit { if let finishObserver { NotificationCenter.default.removeObserver(finishObserver) } }
+    deinit { observers.forEach { NotificationCenter.default.removeObserver($0) } }
 
     func load() { meetings = (try? store?.allMeetings()) ?? [] }
 
@@ -44,6 +51,18 @@ final class RecordingStore {
         } catch {
             NSLog("setCompany failed: \(error)")
         }
+    }
+
+    /// Generate (or re-generate) the saventa-summary for a meeting — the dashboard's manual Summarize /
+    /// Retry. Routed through the recorder's `JobBridge` so it shares the one `SummaryRunner`. The runner
+    /// updates the index + posts `.summaryDidFinish`, which reloads this store.
+    func summarize(_ meeting: MeetingRecord) {
+        jobBridge?.summarize(meetingID: meeting.id, folder: URL(fileURLWithPath: meeting.folderPath))
+    }
+    /// The generated summary text (`summary.md`) for a meeting, if it exists.
+    func summaryText(for meeting: MeetingRecord) -> String? {
+        try? String(contentsOf: URL(fileURLWithPath: meeting.folderPath).appendingPathComponent("summary.md"),
+                    encoding: .utf8)
     }
 
     var filtered: [MeetingRecord] { filterMeetings(meetings, search: search) }

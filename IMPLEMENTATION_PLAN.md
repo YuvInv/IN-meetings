@@ -36,32 +36,48 @@ retention/size cap rides with it. Full rationale in `DECISIONS.md` (2026-06-15).
 3. **Onboarding / TCC permission wizard.** First-run walk-through for Microphone + System-Audio-
    Recording + Google sign-in (structured to add Screen-Recording when video lands). Without it,
    non-dev teammates hit a wall of scary prompts. (ADR-009)
-4. **Reliability pass (goal 1).** Bundle the Silero VAD model in the app + verify the partial-silence
-   fix live; verify multi-party (3+) diarization on a real call; **surface pipeline failures** in the
-   dashboard (today a failed transcription is invisible).
+4. **Reliability pass (goal 1).** ✅ **DONE (PR #10):** Silero VAD bundled in the app + provisioned-from-
+   bundle on launch; **pipeline failures surfaced** in the dashboard (`status:"failed"` + error + Reveal-log).
+   ⏳ still live-verify the partial-silence fix + multi-party (3+) diarization on a real call.
 
 ### P1 — Close the value loop + video (video pulled up)
-5. **Company naming (gap #2).** Add title/transcript fallbacks to the calendar-domain inference; add an
-   **edit/rename UI** that persists (new `MeetingStore.updateCompany`), wired to the "Needs linking"
-   bucket so "Unknown company" is always fixable.
-6. **Claude auto-trigger → Saventa CRM (gap #4 / goal 4).** Headless `claude -p` chain
-   (`saventa-summary` / `process-meeting`) over the package, **one-click default**; the coordinated
-   **`--package`** input mode in `~/repos/claude-skills` (ADR-005 part 2); write run-state back to the
-   index. Trigger + status only — no rich in-app summary panel. (ADR-008)
-7. **Video (gap #5, BIG — pulled up).** ScreenCaptureKit **window-only** HEVC capture (on by default for
-   the `call` profile, per the 2026-06-14 decision) → mux into `meeting.mp4` via the existing
-   `PlaybackRenderer` → Drive upload → dashboard video playback. Adds the **Screen-Recording** grant to
-   onboarding; revisit consent (ADR-010).
-8. **Retention / storage cap (rides with video).** Prune raw WAVs once the merged artifact exists + is
-   uploaded; cap the local cache (ADR-010) — video makes storage GB-scale per meeting.
-9. **Drive folder picker (gap #1).** Browse the selected Shared Drive (Drive API `files.list` tree) and
-   pick/confirm the backup destination, beyond today's auto-created "IN Meetings" folder.
+5. **Company naming (gap #2).** ✅ **DONE (PR #9):** title/transcript fallbacks + an edit/rename UI
+   (`MeetingStore.updateCompany`) wired to the "Needs linking" bucket so "Unknown company" is fixable.
+6. **Claude auto-trigger → summary (gap #4 / goal 4).** 🟢 **DESIGNED — building next.** Spec:
+   `docs/superpowers/specs/2026-06-16-saventa-summary-autotrigger.md`. Meeting done → headless `claude -p`
+   over the package, fed an **app-bundled `saventa-summary` recipe + house style** (NOT a globally-installed
+   skill — removes the per-Mac install / overwrite / drift risk) → writes `summary.md` → dashboard "Summary"
+   panel + Drive sync. Auto-on-finish (just a file, safe). **Sevanta/CRM posting is ON HOLD** — the summary
+   lands in the app + Drive, not the CRM. (ADR-008, amended: bundled recipe, not a coordinated skill install.)
+7. **Video (gap #5, BIG).** ✅ **DONE (PR #10 + the A/V rewrite in PR #11):** SCK capture → `meeting.mp4` →
+   Drive → dashboard playback. The **A/V rewrite captures screen+system+mic via one SCK stream (one clock)**
+   so the merge is synced by construction; **~6× smaller** (720p + passthrough mux). Added the Screen-Recording
+   grant. (Amends ADR-002.)
+8. **Retention / storage cap.** ✅ **DONE (PR #10/#11):** prune raw tracks after Drive backup (on by default).
+   ⏳ a **global cache-size cap** (delete oldest synced meetings beyond N GB) is still TODO.
+9. **Drive folder picker (gap #1).** ✅ **DONE (PR #10):** the real **Google Picker** web view (WKWebView) —
+   pick any My-Drive / Shared-Drive folder; needs a browser API key (committed).
+10. **Auto-stop when a meeting ends (MUST-HAVE — promoted from P2, 2026-06-16).** A **debounced prompt**
+    (not a silent stop) on the detector's armed→idle edge — "Meeting ended — stop & process?" — that rides
+    out ~10–15 s of network blips and keeps recording if ignored (the 2026-06-14 decision). **Research how
+    other recorders detect meeting-end** (call-app audio-process exit / call-window close / calendar end-time)
+    before building. Will amend ADR-002 (stop logic) when designed.
+11. **Upload an audio file for transcription (MUST-HAVE, NOT P0 — 2026-06-16).** Import an existing audio
+    file (e.g. a phone recording) → run the normal pipeline (ASR → post-correct → diarize → package) →
+    dashboard + Drive, with **no live capture**. Reuses everything downstream of capture (an import affordance
+    + a synthetic `job.json`; mic-only / single-track by default). Design later.
 
 ### P2 — Polish & robustness extras
-Ring-buffer pre-roll (nothing lost before *Record*); auto-stop prompt ("meeting ended — stop &
-process?", decided 2026-06-14); speaker naming (Speaker N → attendee names); trash/delete + export-SRT +
-open-in-Drive button; mic-device picker + hotkey rebind + storage/consent settings; fuzzy/edit-distance
-post-correction; tighten Drive scope to `drive.file`.
+Speaker naming ✅ (PR #11, manual one-tap assign). _(Auto-stop moved up to a P1 must-have, 2026-06-16.)_
+Remaining: ring-buffer pre-roll; trash/delete + export-SRT + open-in-Drive; mic-device picker + hotkey rebind
++ storage/consent settings; fuzzy/edit-distance post-correction; tighten Drive scope to `drive.file`; a global
+cache-size cap; the onboarding/TCC wizard (P0).
+
+### Future / post-v1 (captured, NOT designed yet)
+- **User-defined post-meeting skills.** A Settings surface where each user describes to Claude what to do with
+  a transcription — multiple summary types / workflows / schedules. **Generalizes** the saventa-summary
+  auto-trigger (the first, **hardcoded** instance). Complex (prompt-management UI, multiple/scheduled workflows,
+  safety) — recorded as a direction; **do not design or build it now** (Yuval, 2026-06-16). Revisits ADR-008.
 
 Verification discipline (§4) is unchanged — each item verified on a real meeting before the next.
 
