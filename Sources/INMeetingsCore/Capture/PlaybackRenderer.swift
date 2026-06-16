@@ -36,10 +36,25 @@ public struct PlaybackRenderer: Sendable {
         return n > 0 ? (sum / Float(n)).squareRoot() : 0
     }
 
-    /// Mix the audio tracks into `output`, level-balanced; when `video` is given, mux it in too so the
-    /// output is one watchable `meeting.mp4` (window video + balanced audio). One audio track → no
-    /// balancing. Audio and video both start at t=0 (they were captured together within the same Start).
-    public func render(tracks: [URL], video: URL? = nil, to output: URL) async throws {
+    /// Produce the merged playback file. Audio-only (in-person / no video) → a level-balanced `audio.m4a`.
+    /// Video call → mix the audio (aligned to the video via `offsets`, the A/V-sync fix) into a temp track,
+    /// then **passthrough-mux** it with the captured HEVC video into `meeting.mp4` — copying the picture
+    /// instead of re-encoding it, so the file stays the size the capture bitrate set (no HighestQuality bloat).
+    public func render(tracks: [URL], offsets: [Double] = [], video: URL? = nil, to output: URL) async throws {
+        guard let video else {
+            try await mixAudio(tracks: tracks, offsets: offsets, to: output)   // audio-only → m4a
+            return
+        }
+        let mixed = output.deletingLastPathComponent().appendingPathComponent(".mix-\(UUID().uuidString).m4a")
+        defer { try? FileManager.default.removeItem(at: mixed) }
+        try await mixAudio(tracks: tracks, offsets: offsets, to: mixed)        // 1. balanced audio on the video timeline
+        try await muxPassthrough(video: video, audio: mixed, to: output)      // 2. copy video + audio → meeting.mp4
+    }
+
+    /// Mix the audio tracks into one level-balanced `.m4a` at `output`, each placed at its real `offsets[i]`
+    /// (seconds, relative to the video / common clock) so the mix sits on the video's timeline. A track that
+    /// started AFTER the video goes in at `+offset`; one that started BEFORE has its leading `-offset` trimmed.
+    private func mixAudio(tracks: [URL], offsets: [Double], to output: URL) async throws {
         let composition = AVMutableComposition()
         let audioMix = AVMutableAudioMix()
         var params: [AVMutableAudioMixInputParameters] = []
@@ -53,36 +68,51 @@ public struct PlaybackRenderer: Sendable {
                   let dst = composition.addMutableTrack(withMediaType: .audio,
                                                         preferredTrackID: kCMPersistentTrackID_Invalid) else { continue }
             let dur = try await asset.load(.duration)
-            try dst.insertTimeRange(CMTimeRange(start: .zero, duration: dur), of: src, at: .zero)
+            let offset = i < offsets.count ? offsets[i] : 0
+            let sourceStart = offset < 0 ? CMTime(seconds: -offset, preferredTimescale: 600) : .zero
+            let insertAt = offset > 0 ? CMTime(seconds: offset, preferredTimescale: 600) : .zero
+            let length = CMTimeSubtract(dur, sourceStart)
+            guard CMTimeCompare(length, .zero) > 0 else { continue }
+            try dst.insertTimeRange(CMTimeRange(start: sourceStart, duration: length), of: src, at: insertAt)
             let p = AVMutableAudioMixInputParameters(track: dst)
             p.setVolume(volumes[i], at: .zero)
             params.append(p)
         }
         audioMix.inputParameters = params
-
-        var hasVideo = false
-        if let video {
-            let vAsset = AVURLAsset(url: video)
-            if let vSrc = try? await vAsset.loadTracks(withMediaType: .video).first,
-               let vDst = composition.addMutableTrack(withMediaType: .video,
-                                                      preferredTrackID: kCMPersistentTrackID_Invalid) {
-                let vDur = (try? await vAsset.load(.duration)) ?? .zero
-                try vDst.insertTimeRange(CMTimeRange(start: .zero, duration: vDur), of: vSrc, at: .zero)
-                hasVideo = true
-            }
+        guard let export = AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetAppleM4A) else {
+            throw NSError(domain: "PlaybackRenderer", code: 1)
         }
-
-        let preset = hasVideo ? AVAssetExportPresetHEVCHighestQuality : AVAssetExportPresetAppleM4A
-        var session = AVAssetExportSession(asset: composition, presetName: preset)
-        if session == nil, hasVideo {   // some configs lack the HEVC preset — fall back to H.264
-            session = AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetHighestQuality)
-        }
-        guard let export = session else { throw NSError(domain: "PlaybackRenderer", code: 1) }
         try? FileManager.default.removeItem(at: output)
         export.outputURL = output
-        export.outputFileType = hasVideo ? .mp4 : .m4a
+        export.outputFileType = .m4a
         export.audioMix = audioMix
         await export.export()
         if export.status != .completed { throw export.error ?? NSError(domain: "PlaybackRenderer", code: 2) }
+    }
+
+    /// Mux a video + an (already-mixed) audio file into `output` **without re-encoding the video**
+    /// (`Passthrough`), so the picture stays exactly the captured HEVC. Both start at t=0 (the mix already
+    /// baked in the A/V offsets). Falls back to a re-encode only if passthrough fails.
+    private func muxPassthrough(video: URL, audio: URL, to output: URL) async throws {
+        let composition = AVMutableComposition()
+        let vAsset = AVURLAsset(url: video)
+        if let vSrc = try await vAsset.loadTracks(withMediaType: .video).first,
+           let vDst = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid) {
+            try vDst.insertTimeRange(CMTimeRange(start: .zero, duration: try await vAsset.load(.duration)), of: vSrc, at: .zero)
+        }
+        let aAsset = AVURLAsset(url: audio)
+        if let aSrc = try await aAsset.loadTracks(withMediaType: .audio).first,
+           let aDst = composition.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid) {
+            try aDst.insertTimeRange(CMTimeRange(start: .zero, duration: try await aAsset.load(.duration)), of: aSrc, at: .zero)
+        }
+        for preset in [AVAssetExportPresetPassthrough, AVAssetExportPresetHEVCHighestQuality] {
+            guard let export = AVAssetExportSession(asset: composition, presetName: preset) else { continue }
+            try? FileManager.default.removeItem(at: output)
+            export.outputURL = output
+            export.outputFileType = .mp4
+            await export.export()
+            if export.status == .completed { return }
+        }
+        throw NSError(domain: "PlaybackRenderer", code: 3)
     }
 }

@@ -29,7 +29,9 @@ public enum DriveConfig {
     }
     /// ← Paste the Browser API key here once provisioned (or set GOOGLE_PICKER_API_KEY). Empty = the
     /// picker shows a "not configured yet" panel with setup steps instead of a broken web view.
-    static let pickerAPIKeyDefault = ""
+    /// Browser key for project 1062382667236 (Google Picker API). Restrict it to the Picker API + an HTTP
+    /// referrer (`https://localhost/*`) in the Cloud Console so a repo leak can't burn the project's quota.
+    static let pickerAPIKeyDefault = "AIzaSyCHCgy4Jung7CAx7VKYRLjMCJOChKxzzM4"
 
     /// The GCP **project number** (the numeric prefix of the OAuth client id) — required by the Picker.
     public static let pickerAppID = "1062382667236"

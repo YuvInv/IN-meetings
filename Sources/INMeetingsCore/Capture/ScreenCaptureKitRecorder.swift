@@ -3,36 +3,71 @@ import CoreMedia
 import Foundation
 import ScreenCaptureKit
 
-/// Records the detected call app's window as a **window-only, video-only HEVC** stream (ScreenCaptureKit),
-/// written to `video.mov` (DECISIONS 2026-06-14). Audio stays on the Core Audio dual-track path
-/// (`capturesAudio = false`) — this is purely the picture (participants + shared screen). Scoped to the
-/// call app's window so unrelated/sensitive screen content stays out (privacy, ADR-010).
+/// Records a video call through **one ScreenCaptureKit stream** — `.screen` (window video, HEVC),
+/// `.audio` (system audio = the remote participants, "Them"), and `.microphone` ("Me") — all on SCK's
+/// single capture clock (DECISIONS 2026-06-16, amends ADR-002). Because the three streams share one
+/// clock, the merged `meeting.mp4` is A/V-synced *by construction* (no cross-clock skew or drift, the bug
+/// the old separate-capture + t=0 merge had).
 ///
-/// Needs the **Screen Recording** TCC grant. Degrades gracefully — throwing `CaptureError` so the caller
-/// keeps the audio recording — when permission is denied or the call app has no on-screen window.
-/// `@unchecked Sendable`: mutable state is set before `startCapture()` (no callbacks yet) and the frame
-/// counters are guarded by `lock`; `stopCapture()` drains the sample queue before the file is finalized.
+/// Keeps the on-disk contract identical to the audio path — `mic.wav` + `system.wav` (the dual-track
+/// transcription inputs / the moat) + `video.mov` — so the Python pipeline and Drive upload are unchanged.
+/// Each audio type goes to its **own** file (writing `.audio` and `.microphone` to one sink is the known
+/// `captureMicrophone` corruption pitfall). Returns each stream's first timestamp so `PlaybackRenderer`
+/// aligns the mux at the real offsets, not t=0.
+///
+/// Needs the **Screen Recording** + **Microphone** grants. `start()` throws so the caller can fall back to
+/// the audio-only path. `@unchecked Sendable`: writer/file setup happens before `startCapture()` (no
+/// callbacks yet); the sample queue is serial; `stop()` reads shared state under `lock` after the queue drains.
 @available(macOS 14.2, *)
 final class ScreenCaptureKitRecorder: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {
-    let outputURL: URL
+    struct Output {
+        let video: URL?
+        let mic: URL?
+        let system: URL?
+        let micPeakDB: Float
+        let systemPeakDB: Float
+        /// Start offset (seconds) of each audio track relative to the first video frame, on SCK's clock.
+        /// nil when there was no video. Used to align the mux; positive = audio started after video.
+        let micOffset: Double?
+        let systemOffset: Double?
+    }
+
+    /// Capture sizing — a meeting doesn't need 4K/30fps. ~720p @ 15 fps @ 2 Mbps HEVC keeps faces +
+    /// screen-shares legible while a 22-min call is ~300 MB (vs ~1.9 GB at 2× retina / default bitrate).
+    static let maxVideoLongEdge = 1280
+    static let videoBitrate = 2_000_000
+    static let videoFPS: Int32 = 15
+
+    private let directory: URL
     private let bundleID: String
+    private var videoURL: URL { directory.appendingPathComponent("video.mov") }
+    private var micURL: URL { directory.appendingPathComponent("mic.wav") }
+    private var systemURL: URL { directory.appendingPathComponent("system.wav") }
 
     private var stream: SCStream?
     private var writer: AVAssetWriter?
-    private var input: AVAssetWriterInput?
-    private let sampleQueue = DispatchQueue(label: "com.in-venture.in-meetings.video")
+    private var videoInput: AVAssetWriterInput?
+    private var micFile: AVAudioFile?
+    private var systemFile: AVAudioFile?
+    private let sampleQueue = DispatchQueue(label: "com.in-venture.in-meetings.callstream")
     private let lock = NSLock()
+
     private var sessionStarted = false
     private var framesAppended = 0
+    private var videoStart: CMTime?
+    private var micStart: CMTime?
+    private var systemStart: CMTime?
+    private var micPeak: Float = 0
+    private var systemPeak: Float = 0
 
-    init(outputURL: URL, bundleID: String) {
-        self.outputURL = outputURL
+    init(directory: URL, bundleID: String) {
+        self.directory = directory
         self.bundleID = bundleID
     }
 
-    /// Find the call app's largest on-screen window, start an HEVC writer, and begin capture. Throws
-    /// `.screenRecordingDenied` / `.callWindowNotFound` / `.videoWriterFailed` so the caller can degrade
-    /// to audio-only.
+    /// Find the call window, configure a stream that captures video + system audio + mic, and start.
+    /// Throws (`.screenRecordingDenied` / `.callWindowNotFound` / `.videoWriterFailed`) so the caller can
+    /// fall back to the audio-only path.
     func start() async throws {
         let content: SCShareableContent
         do {
@@ -44,83 +79,157 @@ final class ScreenCaptureKitRecorder: NSObject, SCStreamOutput, SCStreamDelegate
             throw CaptureError.callWindowNotFound(bundleID)
         }
 
-        let scale = 2.0   // capture near retina resolution; SCK renders the window content into w×h
-        let w = Self.evenClamp(window.frame.width * scale, max: 3840)
-        let h = Self.evenClamp(window.frame.height * scale, max: 2160)
+        // Downscale to ~720p (long edge), never upscale — a meeting doesn't need the native 2×-retina size.
+        let longEdge = max(window.frame.width, window.frame.height)
+        let fit = min(1.0, CGFloat(Self.maxVideoLongEdge) / longEdge)
+        let w = Self.evenClamp(window.frame.width * fit, max: Self.maxVideoLongEdge)
+        let h = Self.evenClamp(window.frame.height * fit, max: Self.maxVideoLongEdge)
 
         let config = SCStreamConfiguration()
-        config.capturesAudio = false           // audio stays on the Core Audio dual-track path (ADR-002)
+        config.capturesAudio = true            // system audio of the call window = "Them"
+        config.channelCount = 1                // mono — fine for ASR + meeting playback; halves the audio
+        if #available(macOS 15.0, *) {
+            config.captureMicrophone = true    // the user's mic = "Me" (delivered as a separate stream)
+        }
         config.width = w
         config.height = h
-        config.minimumFrameInterval = CMTime(value: 1, timescale: 30)   // up to 30 fps
+        config.minimumFrameInterval = CMTime(value: 1, timescale: Self.videoFPS)
         config.pixelFormat = kCVPixelFormatType_32BGRA
         config.queueDepth = 6
 
-        let writer = try AVAssetWriter(outputURL: outputURL, fileType: .mov)
-        let settings: [String: Any] = [
-            AVVideoCodecKey: AVVideoCodecType.hevc,
-            AVVideoWidthKey: w,
-            AVVideoHeightKey: h,
-        ]
-        let input = AVAssetWriterInput(mediaType: .video, outputSettings: settings)
-        input.expectsMediaDataInRealTime = true
-        guard writer.canAdd(input) else { throw CaptureError.videoWriterFailed(nil) }
-        writer.add(input)
+        let writer = try AVAssetWriter(outputURL: videoURL, fileType: .mov)
+        let videoInput = AVAssetWriterInput(mediaType: .video, outputSettings: [
+            AVVideoCodecKey: AVVideoCodecType.hevc, AVVideoWidthKey: w, AVVideoHeightKey: h,
+            AVVideoCompressionPropertiesKey: [
+                AVVideoAverageBitRateKey: Self.videoBitrate,
+                AVVideoExpectedSourceFrameRateKey: Self.videoFPS,
+                AVVideoMaxKeyFrameIntervalKey: Self.videoFPS * 4,
+            ],
+        ])
+        videoInput.expectsMediaDataInRealTime = true
+        guard writer.canAdd(videoInput) else { throw CaptureError.videoWriterFailed(nil) }
+        writer.add(videoInput)
         guard writer.startWriting() else { throw CaptureError.videoWriterFailed(writer.error) }
         self.writer = writer
-        self.input = input
+        self.videoInput = videoInput
 
-        let filter = SCContentFilter(desktopIndependentWindow: window)
-        let stream = SCStream(filter: filter, configuration: config, delegate: self)
+        let stream = SCStream(filter: SCContentFilter(desktopIndependentWindow: window),
+                              configuration: config, delegate: self)
         try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: sampleQueue)
+        try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: sampleQueue)
+        if #available(macOS 15.0, *) {
+            try stream.addStreamOutput(self, type: .microphone, sampleHandlerQueue: sampleQueue)
+        }
         self.stream = stream
         try await stream.startCapture()
-        captureLog.notice("video.start app=\(self.bundleID, privacy: .public) \(w, privacy: .public)x\(h, privacy: .public)")
+        captureLog.notice("callstream.start app=\(self.bundleID, privacy: .public) \(w, privacy: .public)x\(h, privacy: .public)")
     }
 
-    /// Stop capture and finalize the file. Returns the URL only if a valid (non-empty) video was written;
-    /// otherwise removes the stub and returns nil so the caller treats the meeting as audio-only.
-    func stop() async -> URL? {
+    /// Stop, finalize the video file + close the WAVs, and report what was captured + the A/V offsets.
+    func stop() async -> Output {
         try? await stream?.stopCapture()
         stream = nil
-        lock.lock(); let started = sessionStarted; let frames = framesAppended; lock.unlock()
-        input?.markAsFinished()
-        guard started, frames > 0 else {
+        let (started, frames, vStart, mStart, sStart, mPeak, sPeak) = snapshot()
+
+        videoInput?.markAsFinished()
+        var videoOut: URL?
+        if started, frames > 0 {
+            await writer?.finishWriting()
+            if writer?.status == .completed { videoOut = videoURL }
+        } else {
             writer?.cancelWriting()
-            try? FileManager.default.removeItem(at: outputURL)
-            captureLog.notice("video.stop produced no frames — skipping video")
-            return nil
         }
-        await writer?.finishWriting()
-        let ok = writer?.status == .completed
-        captureLog.notice("video.stop frames=\(frames, privacy: .public) ok=\(ok, privacy: .public)")
-        if ok { return outputURL }
-        try? FileManager.default.removeItem(at: outputURL)
-        return nil
+        if videoOut == nil { try? FileManager.default.removeItem(at: videoURL) }
+        micFile = nil       // flush/close the WAVs
+        systemFile = nil
+
+        func offset(_ s: CMTime?) -> Double? {
+            guard let s, let v = vStart else { return nil }
+            return (s - v).seconds
+        }
+        let mic = FileManager.default.fileExists(atPath: micURL.path) ? micURL : nil
+        let system = FileManager.default.fileExists(atPath: systemURL.path) ? systemURL : nil
+        captureLog.notice("callstream.stop frames=\(frames, privacy: .public) video=\(videoOut != nil, privacy: .public) micPeak=\(mPeak > 0 ? 20*log10(mPeak) : -120, privacy: .public)dB sysPeak=\(sPeak > 0 ? 20*log10(sPeak) : -120, privacy: .public)dB")
+        return Output(video: videoOut, mic: mic, system: system,
+                      micPeakDB: mPeak > 0 ? 20 * log10(mPeak) : -120,
+                      systemPeakDB: sPeak > 0 ? 20 * log10(sPeak) : -120,
+                      micOffset: videoOut != nil ? offset(mStart) : nil,
+                      systemOffset: videoOut != nil ? offset(sStart) : nil)
+    }
+
+    /// Synchronous locked read of the capture state (NSLock can't be held in `stop()`'s async context).
+    private func snapshot() -> (Bool, Int, CMTime?, CMTime?, CMTime?, Float, Float) {
+        lock.lock(); defer { lock.unlock() }
+        return (sessionStarted, framesAppended, videoStart, micStart, systemStart, micPeak, systemPeak)
     }
 
     // MARK: - SCStreamOutput
 
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer,
                 of type: SCStreamOutputType) {
-        guard type == .screen, CMSampleBufferDataIsReady(sampleBuffer) else { return }
-        // Only append "complete" frames — skip the idle/blank deltas SCK emits when nothing on screen changed.
+        guard CMSampleBufferDataIsReady(sampleBuffer) else { return }
+        if type == .screen {
+            appendVideo(sampleBuffer)
+        } else if type == .audio {
+            appendAudio(sampleBuffer, system: true)
+        } else if #available(macOS 15.0, *), type == .microphone {
+            appendAudio(sampleBuffer, system: false)
+        }
+    }
+
+    private func appendVideo(_ sampleBuffer: CMSampleBuffer) {
+        // Only append "complete" frames — skip idle/blank deltas SCK emits when nothing on screen changed.
         guard let attachments = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false)
                 as? [[SCStreamFrameInfo: Any]],
               let statusRaw = attachments.first?[SCStreamFrameInfo.status] as? Int,
               SCFrameStatus(rawValue: statusRaw) == .complete else { return }
-        guard let writer, let input, writer.status == .writing else { return }
-
+        guard let writer, let videoInput, writer.status == .writing else { return }
+        let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
         lock.lock()
         if !sessionStarted {
-            writer.startSession(atSourceTime: CMSampleBufferGetPresentationTimeStamp(sampleBuffer))
+            writer.startSession(atSourceTime: pts)
             sessionStarted = true
+            videoStart = pts
         }
         lock.unlock()
-        if input.isReadyForMoreMediaData {
-            input.append(sampleBuffer)
+        if videoInput.isReadyForMoreMediaData {
+            videoInput.append(sampleBuffer)
             lock.lock(); framesAppended += 1; lock.unlock()
         }
+    }
+
+    /// Write an audio buffer to its WAV (lazily creating the file from the buffer's format) + meter peak.
+    private func appendAudio(_ sampleBuffer: CMSampleBuffer, system: Bool) {
+        guard let fmtDesc = CMSampleBufferGetFormatDescription(sampleBuffer) else { return }
+        let format = AVAudioFormat(cmAudioFormatDescription: fmtDesc)
+        let frames = AVAudioFrameCount(CMSampleBufferGetNumSamples(sampleBuffer))
+        guard frames > 0, let pcm = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames) else { return }
+        pcm.frameLength = frames
+        guard CMSampleBufferCopyPCMDataIntoAudioBufferList(
+            sampleBuffer, at: 0, frameCount: Int32(frames), into: pcm.mutableAudioBufferList) == noErr else { return }
+
+        let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+        var peak: Float = 0
+        if let ch = pcm.floatChannelData {
+            for c in 0..<Int(format.channelCount) {
+                let p = ch[c]; for i in 0..<Int(frames) { let v = abs(p[i]); if v > peak { peak = v } }
+            }
+        }
+        lock.lock()
+        if system {
+            if systemStart == nil { systemStart = pts }
+            if peak > systemPeak { systemPeak = peak }
+            if systemFile == nil { systemFile = try? AVAudioFile(forWriting: systemURL, settings: format.settings,
+                                                                 commonFormat: format.commonFormat, interleaved: format.isInterleaved) }
+            try? systemFile?.write(from: pcm)
+        } else {
+            if micStart == nil { micStart = pts }
+            if peak > micPeak { micPeak = peak }
+            if micFile == nil { micFile = try? AVAudioFile(forWriting: micURL, settings: format.settings,
+                                                           commonFormat: format.commonFormat, interleaved: format.isInterleaved) }
+            try? micFile?.write(from: pcm)
+        }
+        lock.unlock()
     }
 
     // MARK: - Helpers

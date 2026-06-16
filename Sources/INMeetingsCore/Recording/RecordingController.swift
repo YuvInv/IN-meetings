@@ -153,13 +153,25 @@ public final class RecordingController {
         // With a call video → `meeting.mp4` (window video + level-balanced audio); audio-only → `audio.m4a`.
         // Best-effort: a failure leaves the dashboard/Drive to fall back to the raw tracks.
         let dir = result.directory
-        let tracks = [result.mic, result.system].compactMap { $0 }
+        // Pair each track with its A/V offset so the mux can align them (unified video capture); the
+        // audio-only path leaves offsets nil → 0.
+        let trackOffsets: [(URL, Double)] = [
+            result.mic.map { ($0, result.micOffset ?? 0) },
+            result.system.map { ($0, result.systemOffset ?? 0) },
+        ].compactMap { $0 }
         let video = result.video
-        if !tracks.isEmpty {
+        if !trackOffsets.isEmpty {
+            let tracks = trackOffsets.map(\.0)
+            let offsets = trackOffsets.map(\.1)
             Task.detached {
-                let name = video != nil ? PlaybackRenderer.videoOutputName : PlaybackRenderer.outputName
-                try? await PlaybackRenderer().render(tracks: tracks, video: video,
-                                                     to: dir.appendingPathComponent(name))
+                let out = dir.appendingPathComponent(
+                    video != nil ? PlaybackRenderer.videoOutputName : PlaybackRenderer.outputName)
+                try? await PlaybackRenderer().render(tracks: tracks, offsets: offsets, video: video, to: out)
+                // meeting.mp4 now carries the picture (passthrough-copied) — drop the raw video.mov to
+                // reclaim disk immediately, once the mux actually produced the file.
+                if let video, FileManager.default.fileExists(atPath: out.path) {
+                    try? FileManager.default.removeItem(at: video)
+                }
             }
         }
         RecordingsStore.reveal(result.directory)

@@ -40,7 +40,17 @@ picker** (`880f8cf`). All green: **Core 76 tests, pipeline 54, `make build-mac`,
 **⏳ The live behaviours are unverified — run `docs/manual-tests-reliability-video-picker.md` on Yuval's Mac.**
 **One external blocker:** the Drive picker needs a **Google Picker browser API key** in GCP project
 `1062382667236` (set `GOOGLE_PICKER_API_KEY` / `DriveConfig.pickerAPIKeyDefault`) — until then the picker
-sheet shows setup steps. Then: **PR the branch** (split or single), or keep iterating.
+sheet shows setup steps. **Pushed + opened [PR #10](https://github.com/YuvInv/IN-meetings/pull/10).**
+
+**2026-06-16 session 3 (live testing → fixes, on the same branch):** picker + video-capture + the
+video-detail **crash fix** (`baa0b31`: SwiftUI `VideoPlayer` → AppKit `AVPlayerView`) all **live-verified
+and already in PR #10**. **One follow-up committed locally, NOT pushed to PR #10 yet:** `71d2808`
+**A/V-sync rewrite** — a video call now captures screen+system+mic via **one ScreenCaptureKit stream** (one
+clock) instead of three independent clocks merged at t=0 (amends ADR-002; old tap path kept as fallback).
+77 Core tests + build green. **⏳ live-test the A/V rewrite on a real call** (sync holds + SCK `.audio`
+captures "Them") — `docs/manual-tests-reliability-video-picker.md` §B. The **Picker API key is in the
+working tree, deliberately uncommitted** (out of git/PR). Decide: push `71d2808` into PR #10 (the A/V fix
+supersedes PR #10's t=0 video) vs a follow-up PR.
 
 - **P0 — trustworthy app:** (1) **hybrid app shell** ✅ DONE (`60b3546`); (2) onboarding / TCC wizard
   (Mic + System-Audio + **Screen-Recording** + Google) — **unblocked, still TODO**; (3) **reliability pass**

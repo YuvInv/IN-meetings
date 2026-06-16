@@ -14,6 +14,8 @@ struct MeetingDetailView: View {
     @State private var isVideo = false
     @State private var isEditingCompany = false
     @State private var draftCompany = ""
+    @State private var renamingSpeakerId: String?
+    @State private var customName = ""
     private var pkg: TranscriptPackage? { store.transcript(for: meeting) }
 
     var body: some View {
@@ -24,10 +26,55 @@ struct MeetingDetailView: View {
                     .frame(height: 260)
                 Divider()
             }
+            if pkg?.utterances.isEmpty == false {
+                speakerLegend.padding(.horizontal).padding(.vertical, 6)
+                Divider()
+            }
             transcriptArea.frame(maxWidth: .infinity, maxHeight: .infinity)
             if !isVideo, player != nil { Divider(); playbackBar }
         }
         .onAppear(perform: configure).onDisappear(perform: teardown)
+        .alert("Name this speaker", isPresented: Binding(
+            get: { renamingSpeakerId != nil }, set: { if !$0 { renamingSpeakerId = nil } })) {
+            TextField("Name", text: $customName)
+            Button("Save") {
+                if let id = renamingSpeakerId { store.renameSpeaker(customName, email: nil, speakerId: id, for: meeting) }
+                renamingSpeakerId = nil
+            }
+            Button("Cancel", role: .cancel) { renamingSpeakerId = nil }
+        }
+    }
+
+    /// A row of speaker chips above the transcript. Each chip is a menu to assign that diarized speaker a
+    /// name — one-tap from the meeting's attendees, or a custom name — persisted to transcript.json. (We
+    /// can't know which voice is which automatically; that needs voice-ID.)
+    @ViewBuilder private var speakerLegend: some View {
+        let speakers = pkg?.speakers ?? []
+        let attendees = store.metadata(for: meeting)?.attendees ?? []
+        HStack(spacing: 8) {
+            Image(systemName: "person.2").font(.caption).foregroundStyle(.secondary)
+            ForEach(speakers, id: \.id) { sp in
+                Menu {
+                    ForEach(Array(attendees.enumerated()), id: \.offset) { _, att in
+                        Button(att.name) { store.renameSpeaker(att.name, email: att.email, speakerId: sp.id, for: meeting) }
+                    }
+                    if !attendees.isEmpty { Divider() }
+                    Button("Custom name…") { customName = sp.name ?? ""; renamingSpeakerId = sp.id }
+                    if sp.name != nil {
+                        Button("Reset to “\(sp.id)”", role: .destructive) {
+                            store.renameSpeaker(nil, email: nil, speakerId: sp.id, for: meeting)
+                        }
+                    }
+                } label: {
+                    Text(sp.name ?? sp.id).font(.caption.weight(.medium))
+                }
+                .menuStyle(.borderlessButton).fixedSize()
+                .padding(.horizontal, 8).padding(.vertical, 3)
+                .background(sp.side == "internal" ? Color.accentColor.opacity(0.15) : Color.secondary.opacity(0.12),
+                            in: Capsule())
+            }
+            Spacer()
+        }
     }
     private var header: some View {
         HStack(alignment: .firstTextBaseline) {

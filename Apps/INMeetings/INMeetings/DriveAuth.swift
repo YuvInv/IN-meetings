@@ -110,9 +110,15 @@ final class DriveAuth {
 
     /// Best-effort re-push of an edited metadata.json to a meeting's existing Drive folder (P1 rename).
     func reuploadMetadata(meetingFolderID: String, data: Data) async {
+        await reuploadPackageFile("metadata.json", data: data, meetingFolderID: meetingFolderID)
+    }
+
+    /// Best-effort re-push of an edited JSON package file (metadata.json / transcript.json) to a meeting's
+    /// existing Drive folder — keeps Drive in sync after a dashboard edit (company / speaker names).
+    func reuploadPackageFile(_ name: String, data: Data, meetingFolderID: String) async {
         guard let location else { return }
         _ = try? await client.uploadOrReplaceFile(
-            name: "metadata.json", mimeType: "application/json",
+            name: name, mimeType: "application/json",
             data: data, parentID: meetingFolderID, driveId: location.driveID)
     }
 
