@@ -1,4 +1,5 @@
 // Adapted from Mila (github.com/island-io/mila), © Island Technology / Uri Harduf, Apache-2.0. Changes: rebuilt against our ModelManager (phase/isReady/statusText/retry) for the on-device Hebrew ASR + Silero VAD models; English chrome.
+import AppKit
 import SwiftUI
 import INMeetingsCore
 
@@ -27,9 +28,23 @@ struct ModelSettingsTab: View {
             .padding(.vertical, 4)
             .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 10))
 
-            Text("Models install automatically on first launch and are stored under Application Support.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Models install automatically on first launch. Stored at:")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                HStack(spacing: 8) {
+                    Text(ModelManager.modelsDirectory.path(percentEncoded: false))
+                        .font(.caption.monospaced())
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Button("Reveal in Finder") {
+                        NSWorkspace.shared.activateFileViewerSelecting([ModelManager.modelsDirectory])
+                    }
+                    .controlSize(.small)
+                }
+            }
 
             Spacer()
         }
@@ -64,16 +79,22 @@ private struct ModelStatusRow: View {
 
     @ViewBuilder
     private var statusAccessory: some View {
-        if manager.isReady {
-            Label("Installed", systemImage: "checkmark.circle.fill")
-                .font(.subheadline)
-                .foregroundStyle(.green)
-                .labelStyle(.titleAndIcon)
-        } else {
-            HStack(spacing: 8) {
+        HStack(spacing: 10) {
+            if manager.isReady {
+                VStack(alignment: .trailing, spacing: 1) {
+                    Label("Installed", systemImage: "checkmark.circle.fill")
+                        .font(.subheadline)
+                        .foregroundStyle(.green)
+                        .labelStyle(.titleAndIcon)
+                    if let bytes = manager.installedSizeBytes {
+                        Text(ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            } else {
                 if case .downloading = manager.phase {
-                    ProgressView()
-                        .controlSize(.small)
+                    ProgressView().controlSize(.small)
                 }
                 if let status = manager.statusText {
                     Text(status)
@@ -85,6 +106,21 @@ private struct ModelStatusRow: View {
                     Button("Retry") { manager.retry() }
                 }
             }
+
+            Menu {
+                Button("Reveal in Finder") {
+                    NSWorkspace.shared.activateFileViewerSelecting([manager.fileURL])
+                }
+                .disabled(!manager.isReady)
+                Button("Re-download") { manager.redownload() }
+                Divider()
+                Button("Delete", role: .destructive) { manager.delete() }
+                    .disabled(!manager.isReady)
+            } label: {
+                Image(systemName: "ellipsis.circle")
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
         }
     }
 }

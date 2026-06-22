@@ -59,6 +59,29 @@ run-mac: ## Launch the app (builds first if missing)
 	@printf "$(GREEN)[run]$(NC) Launching $(APP_NAME)...\n"
 	@open "$(APP_PRODUCT)"
 
+RELEASE_PRODUCT := $(DERIVED_DATA)/Build/Products/Release/$(APP_NAME)
+
+.PHONY: reset-test-data
+reset-test-data: ## Reset per-user state (TCC/prefs/data) for a fresh onboarding test (KEEP_MODEL=1 by default)
+	@bash scripts/reset-app-data.sh
+
+.PHONY: dmg
+dmg: ## Build a LOCAL UNSIGNED Release .dmg for install/onboarding testing (NOT notarized)
+	@$(MAKE) gen >/dev/null   # regen so the project matches the current branch's files (esp. on feature branches)
+	@printf "$(GREEN)[dmg]$(NC) Building Release (a Debug build's debug-dylib won't run from /Applications)...\n"
+	@set -o pipefail; xcodebuild -project $(PROJECT) \
+		-scheme $(SCHEME) \
+		-destination 'platform=macOS' \
+		-configuration Release \
+		-derivedDataPath $(DERIVED_DATA) \
+		-allowProvisioningUpdates \
+		build 2>&1 | tail -8
+	@if [ ! -d "$(RELEASE_PRODUCT)" ]; then \
+		printf "$(RED)[dmg]$(NC) FAILED: Release app not found. Try 'make gen'.\n"; exit 1; \
+	fi
+	@bash scripts/make-dmg.sh "$(RELEASE_PRODUCT)"
+	@printf "$(YELLOW)[dmg]$(NC) Open it, drag IN Meetings to Applications, then launch from /Applications.\n"
+
 .PHONY: verify-mac
 verify-mac: build-mac ## Build + launch + confirm the menu-bar process is alive
 	@pkill -x "$(PROC_NAME)" 2>/dev/null || true

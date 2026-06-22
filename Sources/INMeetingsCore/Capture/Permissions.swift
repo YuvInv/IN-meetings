@@ -2,13 +2,12 @@ import AVFoundation
 import AppKit
 import CoreGraphics
 
-/// TCC helpers for the capture grants the app needs: Microphone, System Audio Recording, and — once
-/// call video lands (V1) — Screen Recording.
+/// TCC helpers for the capture grants the app needs: Microphone and Screen Recording.
 ///
-/// Microphone has an explicit async request API. System Audio Recording does not — the prompt fires
-/// when the process tap is first created (`SystemAudioTap`); denial shows up as a silent system track,
-/// which `CaptureSession.Result.systemCapturedSilence` flags. Screen Recording uses the CoreGraphics
-/// preflight/request SPIs; the grant only takes effect on a later launch.
+/// Microphone has an explicit async request API. **Screen Recording** uses the CoreGraphics
+/// preflight/request SPIs; the grant only takes effect on a later launch. On macOS 15/26 this single
+/// **"Screen & System Audio Recording"** grant also authorizes the Core Audio process tap that captures
+/// the other participants' audio (the "Them" track) — there is no separate system-audio permission.
 public enum Permissions {
     /// Returns true if the mic is (or becomes) authorized. Prompts once when undetermined.
     public static func requestMicrophone() async -> Bool {

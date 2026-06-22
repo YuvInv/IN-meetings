@@ -12,6 +12,7 @@
 # --- Swift / Xcode build artifacts ---
 .build/
 DerivedData/
+dist/                         # local unsigned .dmg output (make dmg)
 Apps/*/build/
 # XcodeGen output — project.yml is the source of truth (`make gen` regenerates)
 Apps/*/*.xcodeproj
