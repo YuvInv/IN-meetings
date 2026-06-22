@@ -49,4 +49,13 @@ final class MeetingDetectionSettingsTests: XCTestCase {
         let s2 = MeetingDetectionSettings(defaults: d)
         XCTAssertFalse(s2.promptEnabled)
     }
+
+    func testAutoStopEnabledByDefaultAndPersists() {
+        let d = makeDefaults("autoStop")
+        let s1 = MeetingDetectionSettings(defaults: d)
+        XCTAssertTrue(s1.autoStopEnabled)   // ON by default, discoverable
+        s1.autoStopEnabled = false
+        let s2 = MeetingDetectionSettings(defaults: d)
+        XCTAssertFalse(s2.autoStopEnabled)  // persisted across instances
+    }
 }

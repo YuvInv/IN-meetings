@@ -10,6 +10,7 @@ import Observation
 ///
 /// Persisted in `UserDefaults`:
 ///  - `promptEnabled` — master on/off (ON by default so the feature is discoverable).
+///  - `autoStopEnabled` — symmetric "offer to stop when the call ends" countdown (ON by default).
 ///  - `snoozeUntil` — after a "Not now", suppress *all* prompts until this time (1 h window).
 ///  - `disabledApps` — friendly app names the user permanently silenced (e.g. "Zoom").
 ///
@@ -24,6 +25,10 @@ public final class MeetingDetectionSettings {
 
     public var promptEnabled: Bool {
         didSet { defaults.set(promptEnabled, forKey: Keys.enabled) }
+    }
+    /// Whether to float the "Meeting ended — stopping in Ns…" countdown when a recorded call ends.
+    public var autoStopEnabled: Bool {
+        didSet { defaults.set(autoStopEnabled, forKey: Keys.autoStop) }
     }
     public private(set) var snoozeUntil: Date? {
         didSet { defaults.set(snoozeUntil?.timeIntervalSince1970 ?? 0, forKey: Keys.snooze) }
@@ -40,7 +45,11 @@ public final class MeetingDetectionSettings {
         if defaults.object(forKey: Keys.enabled) == nil {
             defaults.set(true, forKey: Keys.enabled)
         }
+        if defaults.object(forKey: Keys.autoStop) == nil {
+            defaults.set(true, forKey: Keys.autoStop)
+        }
         self.promptEnabled = defaults.bool(forKey: Keys.enabled)
+        self.autoStopEnabled = defaults.bool(forKey: Keys.autoStop)
         let ts = defaults.double(forKey: Keys.snooze)
         self.snoozeUntil = ts > 0 ? Date(timeIntervalSince1970: ts) : nil
         self.disabledApps = Set(defaults.stringArray(forKey: Keys.disabled) ?? [])
@@ -73,6 +82,7 @@ public final class MeetingDetectionSettings {
 
     private enum Keys {
         static let enabled = "meetingPrompt.enabled"
+        static let autoStop = "meetingPrompt.autoStopEnabled"
         static let snooze = "meetingPrompt.snoozeUntil"
         static let disabled = "meetingPrompt.disabledApps"
     }

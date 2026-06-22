@@ -48,12 +48,12 @@ retention/size cap rides with it. Full rationale in `DECISIONS.md` (2026-06-15).
 ### P1 — Close the value loop + video (video pulled up)
 5. **Company naming (gap #2).** ✅ **DONE (PR #9):** title/transcript fallbacks + an edit/rename UI
    (`MeetingStore.updateCompany`) wired to the "Needs linking" bucket so "Unknown company" is fixable.
-6. **Claude auto-trigger → summary (gap #4 / goal 4).** 🟢 **DESIGNED — building next.** Spec:
-   `docs/superpowers/specs/2026-06-16-saventa-summary-autotrigger.md`. Meeting done → headless `claude -p`
-   over the package, fed an **app-bundled `saventa-summary` recipe + house style** (NOT a globally-installed
-   skill — removes the per-Mac install / overwrite / drift risk) → writes `summary.md` → dashboard "Summary"
-   panel + Drive sync. Auto-on-finish (just a file, safe). **Sevanta/CRM posting is ON HOLD** — the summary
-   lands in the app + Drive, not the CRM. (ADR-008, amended: bundled recipe, not a coordinated skill install.)
+6. **Claude auto-trigger → summary (gap #4 / goal 4).** ✅ **DONE (PR #12):** a finished **call** → headless
+   `claude -p` over the package, fed an **app-bundled `saventa-summary` recipe + house style** (NOT a
+   globally-installed skill) → writes `summary.md` → dashboard "Summary" panel (running/done/failed +
+   Copy/Retry/Summarize) + Drive sync. Auto-on-finish (file-only, safe) + a manual Summarize button.
+   **Sevanta/CRM posting stays ON HOLD.** (ADR-008, amended.) ⏳ live-verify the panel + full flow on a real
+   call (`docs/manual-tests-saventa-summary.md`).
 7. **Video (gap #5, BIG).** ✅ **DONE (PR #10 + the A/V rewrite in PR #11):** SCK capture → `meeting.mp4` →
    Drive → dashboard playback. The **A/V rewrite captures screen+system+mic via one SCK stream (one clock)**
    so the merge is synced by construction; **~6× smaller** (720p + passthrough mux). Added the Screen-Recording
@@ -62,11 +62,15 @@ retention/size cap rides with it. Full rationale in `DECISIONS.md` (2026-06-15).
    ⏳ a **global cache-size cap** (delete oldest synced meetings beyond N GB) is still TODO.
 9. **Drive folder picker (gap #1).** ✅ **DONE (PR #10):** the real **Google Picker** web view (WKWebView) —
    pick any My-Drive / Shared-Drive folder; needs a browser API key (committed).
-10. **Auto-stop when a meeting ends (MUST-HAVE — promoted from P2, 2026-06-16).** A **debounced prompt**
-    (not a silent stop) on the detector's armed→idle edge — "Meeting ended — stop & process?" — that rides
-    out ~10–15 s of network blips and keeps recording if ignored (the 2026-06-14 decision). **Research how
-    other recorders detect meeting-end** (call-app audio-process exit / call-window close / calendar end-time)
-    before building. Will amend ADR-002 (stop logic) when designed.
+10. **Auto-stop when a meeting ends (MUST-HAVE — promoted from P2, 2026-06-16).** 🟢 **BUILT (pending
+    live-verify), branch `feat/auto-stop-meeting-end`.** Debounced **visible countdown** on the detector's
+    armed→idle edge — "Meeting ended — stopping in {n}s…" — that rides out ~12 s of network blips and
+    auto-stops at 0 unless cancelled (**Keep recording** / **Stop now**); never silent. Trigger = call-app
+    audio-process exit (the existing `CallDetector` signal — that answers the "research meeting-end" ask).
+    Pure Core `AutoStopArbiter` (tick-driven, unit-tested) + app `MeetingEndCoordinator` + `MeetingEndOverlay`
+    card; `autoStopEnabled` (default on). **Amends ADR-002**; **supersedes** the 2026-06-14 keep-if-ignored
+    choice (DECISIONS 2026-06-22). Core 100/100 + build green. ⏳ live-verify on a real call
+    (`docs/manual-tests-auto-stop.md`).
 11. **Upload an audio file for transcription (MUST-HAVE, NOT P0 — 2026-06-16).** Import an existing audio
     file (e.g. a phone recording) → run the normal pipeline (ASR → post-correct → diarize → package) →
     dashboard + Drive, with **no live capture**. Reuses everything downstream of capture (an import affordance
