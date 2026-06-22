@@ -34,4 +34,11 @@ final class CalendarClientTests: XCTestCase {
         XCTAssertEqual(events[0].start.dateTime, "2026-06-14T10:00:00Z")
         XCTAssertEqual(events[0].attendees?.first?.email, "founder@prelligence.com")
     }
+
+    func testDecodesEmptyBodyWithoutItemsAsNoEvents() throws {
+        // Calendar can return a body with no `items` key for an empty day — decode to [] (not throw),
+        // so the day-agenda panel shows "No events" instead of an error state.
+        let json = #"{"kind":"calendar#events"}"#.data(using: .utf8)!
+        XCTAssertEqual(try CalendarClient.decodeEvents(json).count, 0)
+    }
 }

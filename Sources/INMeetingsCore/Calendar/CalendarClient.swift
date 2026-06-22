@@ -37,7 +37,7 @@ public final class CalendarClient: @unchecked Sendable {
     }
 
     static func decodeEvents(_ data: Data) throws -> [CalendarEvent] {
-        try JSONDecoder().decode(EventsResponse.self, from: data).items
+        try JSONDecoder().decode(EventsResponse.self, from: data).items ?? []
     }
 
     // MARK: - API
@@ -89,4 +89,4 @@ public struct CalendarEvent: Decodable, Sendable {
     }
 }
 
-struct EventsResponse: Decodable { let items: [CalendarEvent] }
+struct EventsResponse: Decodable { let items: [CalendarEvent]? }
