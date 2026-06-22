@@ -22,6 +22,7 @@ struct INMeetingsApp: App {
     @State private var captureSettings: CaptureSettings
     @State private var promptCoordinator: MeetingPromptCoordinator
     @State private var drive: DriveAuth
+    @State private var onboarding: OnboardingModel
 
     init() {
         let detector = CallDetector()
@@ -41,13 +42,16 @@ struct INMeetingsApp: App {
         let coordinator = MeetingPromptCoordinator(detector: detector, recorder: recorder, settings: settings)
         _promptCoordinator = State(initialValue: coordinator)
         coordinator.start()   // float a "Record now" card on each detected call (Harvest 3)
-        _drive = State(initialValue: DriveAuth())
+        let drive = DriveAuth()
+        _drive = State(initialValue: drive)
+        _onboarding = State(initialValue: OnboardingModel(drive: drive))
     }
 
     var body: some Scene {
         MenuBarExtra {
             MenuContent(detector: detector, recorder: recorder, models: models,
-                        settings: promptSettings, coordinator: promptCoordinator, drive: drive)
+                        settings: promptSettings, coordinator: promptCoordinator, drive: drive,
+                        onboarding: onboarding)
         } label: {
             MenuBarLabel(detector: detector, recorder: recorder)
         }
@@ -57,6 +61,12 @@ struct INMeetingsApp: App {
             DashboardWindow(drive: drive, jobBridge: recorder.jobBridge)
         }
         .windowResizability(.contentSize)
+
+        Window("Set up IN Meetings", id: "onboarding") {
+            OnboardingWindow(model: onboarding)
+        }
+        .windowResizability(.contentSize)
+        .defaultPosition(.center)
 
         Settings {
             AppSettingsView(settings: promptSettings, models: models, vadModels: vadModel,
@@ -72,6 +82,7 @@ private struct MenuContent: View {
     var settings: MeetingDetectionSettings
     var coordinator: MeetingPromptCoordinator
     var drive: DriveAuth
+    var onboarding: OnboardingModel
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
@@ -80,6 +91,11 @@ private struct MenuContent: View {
             openWindow(id: "dashboard")
         }
         .keyboardShortcut("d")
+        Button("Set up IN Meetings…") {
+            onboarding.restart()
+            NSApp.activate(ignoringOtherApps: true)
+            openWindow(id: "onboarding")
+        }
         Divider()
 
         switch recorder.state {
@@ -199,6 +215,8 @@ final class DashboardLauncher {
     static let shared = DashboardLauncher()
     /// Set once by `MenuBarLabel.onAppear`; calls `openWindow(id: "dashboard")`.
     var open: (() -> Void)?
+    /// Set alongside `open`; calls `openWindow(id: "onboarding")` for the first-run wizard.
+    var openOnboarding: (() -> Void)?
     private init() {}
 }
 
@@ -219,9 +237,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Open the dashboard on launch so it feels like a real app. (P0 #2 / launch-at-login will gate this
-    /// so a *login-item* start stays quiet in the background instead of popping the window.)
+    /// so a *login-item* start stays quiet in the background instead of popping the window.) On first run,
+    /// also float the onboarding wizard in front (the dashboard stays usable behind it).
     func applicationDidFinishLaunching(_ notification: Notification) {
-        DispatchQueue.main.async { DashboardLauncher.shared.open?() }
+        DispatchQueue.main.async {
+            DashboardLauncher.shared.open?()
+            if !OnboardingModel.hasCompleted() {
+                NSApp.activate(ignoringOtherApps: true)
+                DashboardLauncher.shared.openOnboarding?()
+            }
+        }
     }
 }
 
@@ -244,6 +269,7 @@ private struct MenuBarLabel: View {
         }
         .onAppear {
             DashboardLauncher.shared.open = { openWindow(id: "dashboard") }
+            DashboardLauncher.shared.openOnboarding = { openWindow(id: "onboarding") }
         }
     }
 }

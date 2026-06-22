@@ -1,5 +1,6 @@
 import AVFoundation
 import AppKit
+import CoreAudio
 import CoreGraphics
 
 /// TCC helpers for the capture grants the app needs: Microphone, System Audio Recording, and — once
@@ -28,6 +29,24 @@ public enum Permissions {
     @discardableResult
     public static func requestScreenRecording() -> Bool {
         CGPreflightScreenCaptureAccess() || CGRequestScreenCaptureAccess()
+    }
+
+    /// Provoke the **System Audio Recording** TCC prompt. macOS exposes no request/preflight API for this
+    /// grant — the prompt only fires when a process tap is first created. We momentarily create a
+    /// whole-system tap (no live call needed) and immediately destroy it, purely to surface the prompt.
+    /// There's no readable result, so the onboarding step marks itself *attempted* and offers the System
+    /// Settings fallback (`openPrivacySettings`) as the fix-it path. Mirrors `SystemAudioTap.start`.
+    @available(macOS 14.2, *)
+    public static func provokeSystemAudioPrompt() {
+        let desc = CATapDescription(stereoGlobalTapButExcludeProcesses: [])
+        desc.uuid = UUID()
+        desc.muteBehavior = .unmuted
+        var tapID = AudioObjectID(kAudioObjectUnknown)
+        let status = AudioHardwareCreateProcessTap(desc, &tapID)
+        // Creating the tap is what surfaces the prompt; tear it straight back down (we captured nothing).
+        if status == noErr, tapID != kAudioObjectUnknown {
+            AudioHardwareDestroyProcessTap(tapID)
+        }
     }
 
     /// Open System Settings ▸ Privacy & Security (Microphone pane; System Audio Recording sits alongside).
