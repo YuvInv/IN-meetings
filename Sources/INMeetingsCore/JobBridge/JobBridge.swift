@@ -114,6 +114,30 @@ public final class JobBridge {
         }
     }
 
+    /// Start the pipeline for an *imported* recording. The folder must already contain the normalized
+    /// audio track (`audioFilename`) and — for the event-bound path — a pinned `context.input.json`
+    /// (written by the import coordinator). Unlike `enqueue`, this does NOT fetch live calendar context.
+    public func enqueueImport(directory: URL, audioFilename: String, startedAt: Date, endedAt: Date) {
+        phase = nil
+        lastError = nil
+        let jobURL = directory.appendingPathComponent("job.json")
+        let job = ImportJob.make(meetingId: directory.lastPathComponent, directory: directory,
+                                 audioFilename: audioFilename, startedAt: startedAt, endedAt: endedAt)
+        do {
+            let data = try JSONSerialization.data(withJSONObject: job, options: [.prettyPrinted, .sortedKeys])
+            try data.write(to: jobURL, options: .atomic)
+        } catch {
+            lastError = "Failed to write job.json: \(error.localizedDescription)"
+            phase = "failed"
+            captureLog.error("jobbridge.import.writeJob failed: \(error.localizedDescription, privacy: .public)")
+            recordFailure(folder: directory, error: lastError)
+            return
+        }
+        let statusURL = directory.appendingPathComponent("status.json")
+        phase = "queued"
+        spawn(jobURL: jobURL, statusURL: statusURL)
+    }
+
     /// The Swift→Python job contract (ADR-009), kept pure (`nonisolated`) for testability off the main
     /// actor. Keys mirror `pipeline/job.py`.
     nonisolated static func makeJob(_ result: CaptureSession.Result,
