@@ -17,6 +17,31 @@ viable channel**.
 - **No `Developer ID Application` cert** (the one required for distribution). ← the blocker.
 - `notarytool` present (1.1.2); **no** stored notarization credentials.
 
+## Interim: `make dmg` — a LOCAL, UNSIGNED test installer (no account needed)
+Until the Developer-ID pipeline above exists, **`make dmg`** (→ `scripts/make-dmg.sh`) builds a **Release**
+configuration and packages it into `dist/INMeetings.dmg` — a drag-to-`/Applications` `.dmg` purely for
+**install + onboarding/TCC testing**, so you can exercise the as-installed flow (Screen-Recording-after-restart,
+launch-at-login behave differently from a DerivedData debug build).
+
+- **Builds Release on purpose:** a Debug build uses Xcode's debug-dylib split (`ENABLE_DEBUG_DYLIB`) and isn't
+  meant to run outside DerivedData, so it may not launch from `/Applications`. `make dmg` builds Release.
+- **Not for distribution:** not notarized, not Developer-ID signed (it carries the Apple Development cert).
+- On the machine that built it, the `.dmg` has no quarantine flag and opens normally. Copied to **another**
+  Mac (download/AirDrop), Gatekeeper quarantines it → first launch needs **right-click → Open** (or
+  `xattr -dr com.apple.quarantine /Applications/INMeetings.app`).
+- Usage: `make dmg` (builds Release + packages), then open `dist/INMeetings.dmg`, drag to Applications, launch
+  from `/Applications`. `dist/` is git-ignored.
+- This does **not** replace the Ship steps below — it's a stopgap to test the installer UX before the paid
+  account lands.
+
+### `make reset-test-data` — fresh-install state (for repeat onboarding tests)
+macOS keeps per-user state that **`rm -rf` the .app + `tccutil reset` do NOT clear** — the app's preferences
+(incl. the `onboarding.completed` flag, so the wizard won't re-open), recordings, model cache, and the
+Keychain Google token. **`make reset-test-data`** (→ `scripts/reset-app-data.sh`) clears all of it for the
+**current user** (run it in the session you're testing), with a typed-`yes` confirm. It **keeps the ~1.5 GB
+model by default** (`KEEP_MODEL=0 make reset-test-data` to wipe it too). After it runs, reinstall/relaunch and
+onboarding auto-opens. ⚠️ Destructive — deletes local recordings + disconnects Google for that user.
+
 ---
 
 ## Step 0 — Check whether you already have access (may save the whole thing)
