@@ -33,9 +33,14 @@ retention/size cap rides with it. Full rationale in `DECISIONS.md` (2026-06-15).
    Developer-ID sign + notarize + `.dmg` + launch-at-login + Sparkle are best set up once the app is
    feature-complete, and are gated on Apple Developer enrollment. See the **Ship** phase below + the
    runbook [`docs/distribution-setup.md`](docs/distribution-setup.md).
-3. **Onboarding / TCC permission wizard.** First-run walk-through for Microphone + System-Audio-
-   Recording + Google sign-in (structured to add Screen-Recording when video lands). Without it,
-   non-dev teammates hit a wall of scary prompts. (ADR-009)
+3. **Onboarding / TCC permission wizard.** 🟢 **BUILT (pending live-verify), branch
+   `feat/onboarding-tcc-wizard`.** First-run stepped Liquid Glass wizard: **Microphone → System Audio →
+   Screen Recording → Google sign-in**, every step skippable (nothing blocks the dashboard), with a
+   **restart at the end** for Screen Recording (grant takes effect on relaunch). Pure Core
+   `OnboardingChecklist` (tested) + `Permissions.provokeSystemAudioPrompt()` + app `OnboardingModel` +
+   `OnboardingWindow`; auto-opens first run, re-runnable from the menu ("Set up IN Meetings…"). (ADR-009;
+   DECISIONS 2026-06-22.) Core +6 tests + build green. ⏳ live-verify the UI + the four real prompts +
+   relaunch (`docs/manual-tests-onboarding.md`).
 4. **Reliability pass (goal 1).** ✅ **DONE (PR #10):** Silero VAD bundled in the app + provisioned-from-
    bundle on launch; **pipeline failures surfaced** in the dashboard (`status:"failed"` + error + Reveal-log).
    ⏳ still live-verify the partial-silence fix + multi-party (3+) diarization on a real call.
