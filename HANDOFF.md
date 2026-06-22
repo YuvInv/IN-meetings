@@ -6,76 +6,54 @@ Keep it short: last state, next steps, gotchas. History lives in git log.
 -->
 
 ## Outgoing Agent
-Claude Code · 2026-06-22
+Claude Code · 2026-06-22 (session 6)
 
 ## Current State
-**MVP spine is complete and merged to `main` (App UX slice 1 = PR #7, `46e5fe9`); local `main` synced.**
-The app runs the full chain end-to-end: detect a call → dual-track capture → on-device Hebrew
-transcription (post-correction + Silero VAD) → senko diarization → frozen-schema context package +
-SQLite index → per-user Google Drive backup → Liquid Glass dashboard (browse / play merged `audio.m4a`
-/ read RTL transcript) + tabbed Settings (Recording / Model / Drive).
-- Phase 0 (P1 ASR, P2 capture, P3 detection) + Phase 1 MVP + Phase 2 calendar context + App UX slice 1
-  are all on `main`. PR #7 also carried the VAD + Phase-6-scope-defer commits `main` had been missing.
-- **2026-06-15: full gap analysis + re-prioritization done this session** — see `IMPLEMENTATION_PLAN.md`
-  → **"Road to a team-ready v1"** and `DECISIONS.md` (2026-06-15: two entries — the priority order, and
-  the hybrid Dock + menu-bar app-shell decision).
-- **P0 #1 (hybrid app shell) ✅ DONE + committed** on branch `feat/hybrid-app-shell` (not yet pushed/PR'd):
-  `523bda9` (docs) + `60b3546` (code). `LSUIElement=false` (Dock icon) + `AppDelegate` (recorder stays
-  alive when the dashboard closes + reopen on Dock-click) + `MenuBarLabel`; **IN Venture logo** as the
-  app/Dock icon (`Assets.xcassets/AppIcon.appiconset`) + menu-bar icon (`MenuBarIcon.imageset`); source at
-  `Apps/INMeetings/AppIcon-source.png`. **Verified live** (Dock + tray show the logo, close ≠ quit,
-  Dock-click reopens, launch opens dashboard). Plan: `docs/superpowers/plans/2026-06-15-hybrid-app-shell.md`.
-- **P0 #2 (distribution) → DEFERRED TO LAST** (final "Ship" phase, per Yuval 2026-06-15) **+ gated on an Apple Developer Program membership.** Runbook: `docs/distribution-setup.md`. Inventory (2026-06-15):
-  only an `Apple Development` cert (team A6C6D257QN), **no `Developer ID Application` cert**, notarytool
-  present, no stored notary creds. No Developer ID → no notarized `.dmg`; the app can't use the App Store
-  (private TCC SPIs). **Launch-at-login is coupled to this** (register the *installed* `/Applications` app,
-  not a DerivedData debug build) so it's parked too. Unblock = enrol in the Apple Developer Program ($99/yr;
-  check if IN Venture already has an account) — walk Yuval through it. **Don't write untestable signing
-  scripts before the cert exists.**
+**Road-to-v1 nearly complete; `main` is at the PR #14 merge.** End-to-end: detect → dual-track capture →
+on-device Hebrew transcription (post-correction + Silero VAD) → senko diarization → frozen-schema context
+package + SQLite index → per-user Drive backup → Liquid Glass dashboard (browse / play `meeting.mp4`/`audio.m4a`
+/ read RTL transcript) + tabbed Settings + a first-run onboarding wizard.
+
+**Merged to `main` this session (2026-06-22):**
+- **[PR #12] saventa-summary auto-trigger** — call done → headless `claude -p` + app-bundled recipe →
+  `summary.md` → dashboard Summary panel + Drive. **Sevanta/CRM posting ON HOLD.**
+- **[PR #13] auto-stop on meeting end** — debounced visible countdown on the detector's **armed→idle** edge
+  (`AutoStopArbiter` + `MeetingEndCoordinator`/`Overlay`; `autoStopEnabled` default on; amends ADR-002,
+  supersedes the 2026-06-14 keep-if-ignored choice).
+- **[PR #14] onboarding/TCC wizard (live-verified)** — 3-step **Mic → Screen & System Audio Recording →
+  Google**; single-primary grant button + "Skip for now"; auto-opens first run, re-runnable from the menu.
+  Plus **model visibility + management** (wizard download status; Settings → Models path/size/Reveal/Delete/
+  Re-download) **and folded-in local test tooling** (`make dmg`, `make reset-test-data`).
+
+**Load-bearing finding (DECISIONS 2026-06-22):** macOS 15/26 has **no separate "System Audio Recording"
+grant** — system audio is covered by **"Screen & System Audio Recording"** (confirmed empirically: the
+Core-Audio-tap "Them" track records with only Screen Recording granted). So onboarding is 3 steps.
+
+Earlier on `main`: hybrid app shell (PR #8), company naming (#9), reliability/VAD + call video + Drive picker
+(#10/#11), A/V-sync rewrite + ~6× smaller files + speaker naming (#11).
 
 ## Next — START HERE
 
-**Shipped + MERGED to `main` (2026-06-16):** [PR #10](https://github.com/YuvInv/IN-meetings/pull/10) ·
-[PR #11](https://github.com/YuvInv/IN-meetings/pull/11) · **[PR #12](https://github.com/YuvInv/IN-meetings/pull/12)** —
-all merged. **Local `main` synced to `origin/main` `78c8d05`.** #10/#11 = P0 reliability + P1 call video
-(one-SCK-stream A/V sync, ~6× smaller) + speaker naming + Drive folder picker (all live-verified).
+**Two features captured for THIS session — design briefs written; brainstorm → spec → build:**
+1. **Calendar-driven audio upload + context** (reshapes the old "audio-file upload" must-have). A **right-side
+   calendar panel** on the dashboard (after Google connect) → click a meeting → **upload an audio file + assign
+   it to that meeting** → the event's context (time/attendees/company) enriches the package and gives candidate
+   identities for the diarized speakers. **Reality to align on:** an uploaded file is a single mixed track;
+   diarization separates speakers but true voice-ID auto-naming is a **separate project** — v1 = assisted
+   labelling from the attendee list. Reuses `CalendarClient`/`CalendarContext` + the synthetic-`job.json`
+   import path + `SpeakerEditor`. **Brief: `docs/superpowers/specs/2026-06-22-calendar-upload-context-brief.md`.**
+2. **Modular / resizable meeting layout** (after #1). Make `MeetingDetailView`'s **video / summary / transcript**
+   panes resizable (today a fixed `VStack`; likely `HSplitView`/`VSplitView` + persisted sizes, adapting when
+   there's no video). **Brief: `docs/superpowers/specs/2026-06-22-modular-meeting-layout-brief.md`.**
 
-**✅ saventa-summary auto-trigger — DONE (PR #12).** A finished **call** → `JobBridge` kicks Core
-`SummaryRunner` → headless `claude -p` over the package, fed an **app-bundled recipe + house-style** (no skill
-install; amends ADR-008) → writes `<folder>/summary.md` → dashboard **Summary** panel (running/done/failed +
-Copy/Retry/Summarize) + Drive. `CaptureSettings.autoSummary` (default on, calls only); `MeetingStore` v3
-(`summaryState`/`summaryError`/`summarySessionId`); `SummaryRunner` resolves `claude` on a GUI-safe PATH and
-degrades gracefully if it's absent. **Sevanta/CRM posting stays ON HOLD.** Core 90/90 + `make build-mac` green;
-`claude -p` verified end-to-end on the golden fixture. **⏳ Yuval's live-test (needs the GUI):** the Summary
-panel states + full record→auto-summary→Drive on a real call — `docs/manual-tests-saventa-summary.md`.
+**Other remaining v1 gaps:** **Ship** phase (Developer-ID sign + notarize + `.dmg` + launch-at-login + Sparkle
+— done LAST, gated on a **$99 Apple Developer account**; runbook `docs/distribution-setup.md`; interim
+**`make dmg`** exists for local unsigned install testing); a **global cache-size cap**. The in-app "AI overview"
+panel stays out of v1.
 
-**🟢 BUILT this session (2026-06-22, branch `feat/auto-stop-meeting-end`, pending live-verify): auto-stop on
-meeting end.** On the detector's **armed→idle** edge while recording, a **debounced visible countdown** card
-("Meeting ended — stopping in {n}s…", 12 s debounce / 30 s countdown) floats; at 0 it auto-stops + runs the
-normal pipeline, unless cancelled (**Keep recording** / **Stop now**). **Never silent.** Trigger = call-app
-audio-process exit (the existing `CallDetector` signal — answers the roadmap's "research meeting-end" ask).
-Architecture: pure Core **`AutoStopArbiter`** (tick-driven state machine, 9 unit tests) + app
-**`MeetingEndCoordinator`** (1 s timer + floating `NSPanel`) + Liquid Glass **`MeetingEndOverlay`** card;
-`MeetingDetectionSettings.autoStopEnabled` (default on) + a menu-bar toggle next to the start-prompt toggle;
-a DEBUG "Preview meeting-ended countdown" menu item. **Amends ADR-002 + supersedes the 2026-06-14
-keep-if-ignored choice** (DECISIONS 2026-06-22). Spec `docs/superpowers/specs/2026-06-22-auto-stop-design.md`.
-**Core 100/100 + `make build-mac` green. ⏳ Yuval's live-test (needs the GUI):** countdown + auto-stop +
-cancel paths on a real call — `docs/manual-tests-auto-stop.md`. Not yet PR'd.
-
-**Roadmap changes this session (DECISIONS 2026-06-16 + IMPLEMENTATION_PLAN):**
-- **Auto-stop when a meeting ends → now a v1 MUST-HAVE** (P1, was P2). Debounced prompt, never silent (the
-  2026-06-14 decision). **Research how other recorders detect meeting-end** before designing.
-- **Upload an audio file for transcription → new MUST-HAVE, NOT P0** (P1). Import a file (e.g. a phone
-  recording) → normal pipeline → package → dashboard/Drive; no live capture. Design later.
-- **User-defined post-meeting skills → FUTURE, not designed yet.** A Settings surface for user-described
-  workflows; generalizes this saventa-summary trigger. Don't design now.
-
-**Remaining roadmap gaps:** onboarding / TCC wizard (Mic + System-Audio + **Screen-Recording** + Google —
-the adoption gate, still TODO); **Ship** phase (Developer-ID sign + notarize + `.dmg` + launch-at-login +
-Sparkle — done LAST, gated on a $99 Apple Developer account; runbook `docs/distribution-setup.md`); the
-**audio-upload** must-have; a global cache-size cap. **auto-stop ✅ built (pending live-verify, branch
-`feat/auto-stop-meeting-end`).** The in-app "AI overview" panel stays out of v1. Hybrid app shell ✅ (PR #8);
-company naming+edit ✅ (PR #9).
+**Live-test debt (needs Yuval at the GUI on a real call):** **auto-stop** (#13 — countdown + cancel paths,
+`docs/manual-tests-auto-stop.md`); **saventa-summary** panel + full flow (#12,
+`docs/manual-tests-saventa-summary.md`); partial-silence VAD + multi-party (3+) diarization.
 
 ## Gotchas (verified)
 - **The Google Calendar API must be enabled in the OAuth client's GCP project (1062382667236).** Enabled
@@ -104,14 +82,12 @@ company naming+edit ✅ (PR #9).
   per-meeting `pipeline.log` once one runs.
 - **Merged playback file**: ✅ audio (`audio.m4a`) + ✅ **video (`meeting.mp4`, `2ba876e`)** — muxed window
   video + balanced audio, uploaded to Drive, played in the dashboard. ⏳ live-verify A/V sync on a real call.
-- **Screen Recording grant** — call video needs it; `Permissions.requestScreenRecording` provokes the prompt
-  but the grant only takes effect on a **relaunch** (degrades to audio-only until then). Fold into onboarding.
+- **Screen Recording grant** — call video + the system-audio tap need it; the grant only takes effect on a
+  **relaunch** (degrades until then). ✅ folded into the onboarding wizard (PR #14) with a restart-at-the-end.
 - **Drive picker GCP key** — provision the **Google Picker browser API key** in project `1062382667236`
   (enable the Google Picker API) so the web-view picker renders; `GOOGLE_PICKER_API_KEY` / `pickerAPIKeyDefault`.
 - **Company naming** (gap #2, P1): edit/rename UI ✅ (PR #9). Inference is still calendar-external-domain only
   → "Unknown company" on no-match / internal-only / fetch-fail; title + transcript fallbacks designed but unused.
-- **Saventa-summary auto-trigger** (active feature, designed): build `SummaryRunner` + the bundled recipe per
-  the spec; `summary.md` contract → dashboard panel + Drive. Live-verify `claude -p` runs the recipe headless.
 - (carried) per-company variant accumulation; fuzzy/edit-distance post-correct; calendars beyond `primary`;
   multiple internal domains (config).
 - (carried) retention: ✅ **prune raw tracks after Drive backup** (`2ba876e`, on by default, user-disablable);

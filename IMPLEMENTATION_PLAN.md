@@ -33,14 +33,14 @@ retention/size cap rides with it. Full rationale in `DECISIONS.md` (2026-06-15).
    Developer-ID sign + notarize + `.dmg` + launch-at-login + Sparkle are best set up once the app is
    feature-complete, and are gated on Apple Developer enrollment. See the **Ship** phase below + the
    runbook [`docs/distribution-setup.md`](docs/distribution-setup.md).
-3. **Onboarding / TCC permission wizard.** 🟢 **BUILT (pending live-verify), branch
-   `feat/onboarding-tcc-wizard`.** First-run stepped Liquid Glass wizard: **Microphone → System Audio →
-   Screen Recording → Google sign-in**, every step skippable (nothing blocks the dashboard), with a
-   **restart at the end** for Screen Recording (grant takes effect on relaunch). Pure Core
-   `OnboardingChecklist` (tested) + `Permissions.provokeSystemAudioPrompt()` + app `OnboardingModel` +
-   `OnboardingWindow`; auto-opens first run, re-runnable from the menu ("Set up IN Meetings…"). (ADR-009;
-   DECISIONS 2026-06-22.) Core +6 tests + build green. ⏳ live-verify the UI + the four real prompts +
-   relaunch (`docs/manual-tests-onboarding.md`).
+3. **Onboarding / TCC permission wizard.** ✅ **DONE + MERGED + live-verified (PR #14).** First-run stepped
+   Liquid Glass wizard: **Microphone → Screen & System Audio Recording → Google sign-in** (3 steps — macOS
+   15/26 has no separate system-audio grant; DECISIONS 2026-06-22), every step skippable (single primary
+   grant button + "Skip for now"; nothing blocks the dashboard), **restart at the end** for Screen Recording.
+   Pure Core `OnboardingChecklist` (tested) + app `OnboardingModel`/`OnboardingWindow`; auto-opens first run,
+   re-runnable from the menu ("Set up IN Meetings…"). Also added **model visibility + management** (wizard
+   download status; Settings → Models path/size/Reveal/Delete/Re-download) + the local test tooling
+   (`make dmg`, `make reset-test-data`). (ADR-009.) Live-verified by Yuval.
 4. **Reliability pass (goal 1).** ✅ **DONE (PR #10):** Silero VAD bundled in the app + provisioned-from-
    bundle on launch; **pipeline failures surfaced** in the dashboard (`status:"failed"` + error + Reveal-log).
    ⏳ still live-verify the partial-silence fix + multi-party (3+) diarization on a real call.
@@ -71,16 +71,25 @@ retention/size cap rides with it. Full rationale in `DECISIONS.md` (2026-06-15).
     card; `autoStopEnabled` (default on). **Amends ADR-002**; **supersedes** the 2026-06-14 keep-if-ignored
     choice (DECISIONS 2026-06-22). Core 100/100 + build green. ⏳ live-verify on a real call
     (`docs/manual-tests-auto-stop.md`).
-11. **Upload an audio file for transcription (MUST-HAVE, NOT P0 — 2026-06-16).** Import an existing audio
-    file (e.g. a phone recording) → run the normal pipeline (ASR → post-correct → diarize → package) →
-    dashboard + Drive, with **no live capture**. Reuses everything downstream of capture (an import affordance
-    + a synthetic `job.json`; mic-only / single-track by default). Design later.
+11. **Calendar-driven audio upload + context (MUST-HAVE — reshaped 2026-06-22, was "upload an audio file").**
+    🟦 **NEXT — design brief written, not yet designed/built.** Make the audio-import feature "whole": a
+    **right-side calendar panel** on the dashboard (after Google connect) → click a meeting → **upload an
+    audio file and assign it to that meeting** → the event's context (time / attendees / company) enriches the
+    package and gives candidate identities for the diarized speakers (assisted speaker labelling; true
+    voice-ID is a separate project). Single mixed track (no live dual-track), so diarization does all the
+    separation. Reuses `CalendarClient`/`CalendarContext` + the synthetic-`job.json` import path + `SpeakerEditor`.
+    **Brief: `docs/superpowers/specs/2026-06-22-calendar-upload-context-brief.md`** — brainstorm → spec → build
+    next session.
+12. **Modular / resizable meeting layout (2026-06-22).** 🟦 **NEXT (after #11) — design brief written.** Make
+    the meeting detail panes — **video / summary / transcript** — resizable (and possibly collapsible). Today
+    `MeetingDetailView` is a fixed `VStack`. Likely `HSplitView`/`VSplitView` with persisted sizes, adapting
+    when there's no video. **Brief: `docs/superpowers/specs/2026-06-22-modular-meeting-layout-brief.md`.**
 
 ### P2 — Polish & robustness extras
 Speaker naming ✅ (PR #11, manual one-tap assign). _(Auto-stop moved up to a P1 must-have, 2026-06-16.)_
 Remaining: ring-buffer pre-roll; trash/delete + export-SRT + open-in-Drive; mic-device picker + hotkey rebind
 + storage/consent settings; fuzzy/edit-distance post-correction; tighten Drive scope to `drive.file`; a global
-cache-size cap; the onboarding/TCC wizard (P0).
+cache-size cap. (Onboarding/TCC wizard ✅ done, PR #14.)
 
 ### Future / post-v1 (captured, NOT designed yet)
 - **User-defined post-meeting skills.** A Settings surface where each user describes to Claude what to do with
