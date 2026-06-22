@@ -99,6 +99,36 @@ final class RecordingStore {
         }
         return nil
     }
+
+    // MARK: - Calendar import passthroughs
+
+    /// Calendar event ids that already have a recording (panel "✓ recorded" markers).
+    func recordedCalendarEventIds() -> Set<String> {
+        (try? store?.calendarEventIdsWithRecording()) ?? []
+    }
+
+    /// Open the meeting bound to a calendar event (panel click-through).
+    func openMeeting(forCalendarEventId eventId: String) {
+        if let m = try? store?.meeting(forCalendarEventId: eventId) { selection = .meeting(m.id) }
+    }
+
+    /// Surfaced as an alert by the dashboard when an import fails before processing.
+    var importError: String?
+
+    /// Import a recording (optionally bound to a calendar event) and select it once processing starts.
+    /// Reloads the list when the pipeline finishes (the existing `.jobBridgeDidFinish` observer covers it).
+    func importRecording(from fileURL: URL, event: CalendarEvent?, start: Date, end: Date) async {
+        let importer = MeetingImporter(
+            writePinnedContext: { dir, ev, s, e in CalendarContext().writePinnedInput(into: dir, event: ev, startedAt: s, endedAt: e) },
+            enqueue: { [weak self] dir, name, s, e in self?.jobBridge?.enqueueImport(directory: dir, audioFilename: name, startedAt: s, endedAt: e) })
+        do {
+            let id = try await importer.importRecording(from: fileURL, event: event, start: start, end: end)
+            load()
+            selection = .meeting(id)
+        } catch {
+            importError = error.localizedDescription
+        }
+    }
 }
 
 enum DashboardSelection: Hashable {

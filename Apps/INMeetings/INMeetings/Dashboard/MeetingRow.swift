@@ -23,6 +23,10 @@ struct MeetingRow: View {
                 }
                 HStack(spacing: 6) {
                     chip(meeting.type == "in_person" ? "in-person" : "call", "phone", .secondary)
+                    if meeting.source == "imported" {
+                        Text("Imported").font(.caption2).padding(.horizontal, 5).padding(.vertical, 1)
+                            .background(.tint.opacity(0.15), in: Capsule()).foregroundStyle(.tint)
+                    }
                     if meeting.status == "failed" { chip("failed", "exclamationmark.triangle.fill", .red) }
                     if meeting.syncState == "synced" { chip("synced", "cloud.fill", .green) }
                     if meeting.biased { chip("context", "sparkles", .blue) }
