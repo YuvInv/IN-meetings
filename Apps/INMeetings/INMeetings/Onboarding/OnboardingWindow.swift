@@ -1,10 +1,11 @@
 import SwiftUI
 import INMeetingsCore
 
-/// The first-run permission wizard window: Welcome → Microphone → System Audio → Screen Recording →
-/// Google → Done. Every grant step is skippable (Continue always advances; granting is optional), so the
-/// user can always reach the dashboard. Screen Recording's grant needs a relaunch, which the Done step
-/// front-loads via "Restart IN Meetings".
+/// The first-run permission wizard window: Welcome → Microphone → Screen & System Audio Recording →
+/// Google → Done. Every grant step is skippable ("Skip for now"), so the user always reaches the
+/// dashboard. The Screen & System Audio grant goes live on a relaunch, which the Done step front-loads via
+/// "Restart IN Meetings". (On macOS 15/26 that one grant also authorizes the "Them" audio track, so there's
+/// no separate system-audio step.)
 struct OnboardingWindow: View {
     @Bindable var model: OnboardingModel
     @Environment(\.dismissWindow) private var dismissWindow
@@ -28,6 +29,12 @@ struct OnboardingWindow: View {
         .frame(width: 560, height: 470)
         .background(.regularMaterial)
         .onAppear { model.refresh() }
+        // Re-read status when stepping between screens or returning from System Settings, so a grant made
+        // outside the app reflects without a manual refresh.
+        .onChange(of: model.index) { _, _ in model.refresh() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            model.refresh()
+        }
     }
 
     // MARK: progress dots
@@ -57,27 +64,22 @@ struct OnboardingWindow: View {
                 granted: model.micGranted,
                 actionLabel: "Allow Microphone",
                 action: { run { await model.requestMicrophone() } },
-                busy: busy)
-        case .grant(.systemAudio):
-            OnboardingStepView(
-                systemImage: "speaker.wave.2.fill",
-                title: "System Audio Recording",
-                explanation: "Lets IN Meetings hear the other participants — the audio coming out of your Mac. macOS will show a prompt; choose “Allow”.",
-                granted: model.systemAudioAttempted ? nil : false,
-                actionLabel: "Show the prompt",
-                action: { model.provokeSystemAudio() },
-                note: "If you miss the prompt, you can enable IN Meetings under System Settings ▸ Privacy & Security ▸ System Audio Recording.")
+                busy: busy,
+                secondaryLabel: model.micGranted ? nil : "Open Microphone settings…",
+                secondaryAction: { Permissions.openPrivacySettings() })
         case .grant(.screenRecording):
             OnboardingStepView(
-                systemImage: "video.fill",
-                title: "Screen Recording",
-                explanation: "Lets IN Meetings record the call window (participants and shared screen) as video. Audio-only meetings don’t need this.",
+                systemImage: "rectangle.inset.filled.badge.record",
+                title: "Screen & System Audio Recording",
+                explanation: "Lets IN Meetings record the call window (participants and shared screen) and the other participants’ audio — the “Them” track. macOS groups both under this one permission.",
                 granted: model.screenGranted,
-                actionLabel: "Allow Screen Recording",
+                actionLabel: "Allow Screen & System Audio",
                 action: { model.requestScreenRecording() },
                 note: model.screenRequested && !model.screenGranted
                     ? "Granted — this takes effect after a restart (offered on the last step)."
-                    : "In-person meetings are always audio-only.")
+                    : "Records the call window + the other side’s audio.",
+                secondaryLabel: "Open Screen Recording settings…",
+                secondaryAction: { Permissions.openScreenRecordingSettings() })
         case .grant(.google):
             googleStep
         case .done:
@@ -97,6 +99,16 @@ struct OnboardingWindow: View {
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: 400)
+
+            // Surface the ~1.5 GB Hebrew-model download so first-run users see it happening, not silence.
+            Label {
+                Text(model.modelStatus)
+            } icon: {
+                Image(systemName: model.modelReady ? "checkmark.circle.fill" : "arrow.down.circle")
+                    .foregroundStyle(model.modelReady ? .green : .secondary)
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
         }
     }
 
@@ -131,10 +143,11 @@ struct OnboardingWindow: View {
                 .font(.title2.weight(.semibold))
             VStack(alignment: .leading, spacing: 8) {
                 recapRow("Microphone", granted: model.micGranted)
-                recapRow("System Audio", granted: model.systemAudioAttempted ? nil : false)
-                recapRow("Screen Recording", granted: model.screenGranted, pending: model.needsRestart)
+                recapRow("Screen & System Audio Recording", granted: model.screenGranted, pending: model.needsRestart)
                 recapRow("Google (Drive + Calendar)", granted: model.googleConnected)
                 Divider().padding(.vertical, 2)
+                recapRow("On-device Hebrew model", granted: model.modelReady,
+                         pendingNote: model.modelReady ? nil : "downloading in the background")
                 recapRow("Auto-summary (Claude CLI)", granted: model.claudeCLIDetected,
                          pendingNote: model.claudeCLIDetected ? nil : "optional — install the Claude CLI")
             }
@@ -186,9 +199,16 @@ struct OnboardingWindow: View {
                 }
                 .buttonStyle(.glassProminent)
                 .controlSize(.large)
-            } else {
+            } else if model.currentGrantSatisfied {
+                // Grant done (or Welcome) → the single prominent action is to move on.
                 Button(model.isFirst ? "Get started" : "Continue") { model.next() }
                     .buttonStyle(.glassProminent)
+                    .controlSize(.large)
+            } else {
+                // Until the grant is made, advancing is the *secondary* path — the prominent button is the
+                // "Allow…" in the step content, so the two no longer compete.
+                Button("Skip for now") { model.next() }
+                    .buttonStyle(.glass)
                     .controlSize(.large)
             }
         }

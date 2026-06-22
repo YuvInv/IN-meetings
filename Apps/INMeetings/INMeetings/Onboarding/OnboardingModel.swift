@@ -12,7 +12,7 @@ import INMeetingsCore
 @MainActor
 @Observable
 final class OnboardingModel {
-    /// One screen of the wizard (the four grants bracketed by Welcome + Done).
+    /// One screen of the wizard (the three grants bracketed by Welcome + Done).
     enum Screen: Equatable {
         case welcome
         case grant(OnboardingStep)
@@ -22,7 +22,6 @@ final class OnboardingModel {
     let screens: [Screen] = [
         .welcome,
         .grant(.microphone),
-        .grant(.systemAudio),
         .grant(.screenRecording),
         .grant(.google),
         .done,
@@ -36,16 +35,29 @@ final class OnboardingModel {
     // Live status (refreshed after actions / on appear). Google comes from the observable DriveAuth.
     private(set) var micGranted = false
     private(set) var screenGranted = false
-    private(set) var systemAudioAttempted = false
     private(set) var screenRequested = false
 
     let drive: DriveAuth
+    let models: ModelManager
     private let defaults: UserDefaults
 
-    init(drive: DriveAuth, defaults: UserDefaults = .standard) {
+    init(drive: DriveAuth, models: ModelManager, defaults: UserDefaults = .standard) {
         self.drive = drive
+        self.models = models
         self.defaults = defaults
         refresh()
+    }
+
+    /// Whether the current step's grant is satisfied — so the footer can show a single primary "Continue"
+    /// once done and a quiet "Skip for now" until then (no two competing primary buttons). Screen Recording
+    /// counts as satisfied once requested (its grant only goes live on the restart at the end).
+    var currentGrantSatisfied: Bool {
+        switch current {
+        case .welcome, .done: return true
+        case .grant(.microphone): return micGranted
+        case .grant(.screenRecording): return screenGranted || screenRequested
+        case .grant(.google): return googleConnected
+        }
     }
 
     var googleConnected: Bool {
@@ -69,6 +81,14 @@ final class OnboardingModel {
         return candidates.contains { FileManager.default.isExecutableFile(atPath: $0) }
     }
 
+    /// One-line status of the on-device Hebrew model for the wizard — so first-run users see the ~1.5 GB
+    /// download happening instead of silence.
+    var modelStatus: String {
+        models.isReady ? "On-device Hebrew model ready." : (models.statusText.map { $0 + " (runs in the background)" } ?? "Preparing the on-device model…")
+    }
+
+    var modelReady: Bool { models.isReady }
+
     func refresh() {
         micGranted = AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
         screenGranted = Permissions.hasScreenRecording()
@@ -86,11 +106,6 @@ final class OnboardingModel {
     func requestMicrophone() async {
         _ = await Permissions.requestMicrophone()
         refresh()
-    }
-
-    func provokeSystemAudio() {
-        Permissions.provokeSystemAudioPrompt()
-        systemAudioAttempted = true
     }
 
     func requestScreenRecording() {

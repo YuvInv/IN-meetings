@@ -44,7 +44,7 @@ struct INMeetingsApp: App {
         coordinator.start()   // float a "Record now" card on each detected call (Harvest 3)
         let drive = DriveAuth()
         _drive = State(initialValue: drive)
-        _onboarding = State(initialValue: OnboardingModel(drive: drive))
+        _onboarding = State(initialValue: OnboardingModel(drive: drive, models: models))
     }
 
     var body: some Scene {

@@ -1,18 +1,22 @@
 import SwiftUI
 
 /// Reusable content chrome for one grant step of the onboarding wizard: an icon, a title, a plain-language
-/// explanation, a status pill, the grant action button, and an optional note. Presentational only — the
-/// wizard's navigation (Back / Continue) lives in `OnboardingWindow`.
+/// explanation, a status pill, the (single, prominent) grant action button, an optional note, and an
+/// optional secondary "Open … settings" link. Presentational only — the wizard's navigation (Back /
+/// Continue / Skip) lives in `OnboardingWindow`.
 struct OnboardingStepView: View {
     let systemImage: String
     let title: String
     let explanation: String
-    /// nil = status can't be read (System Audio); true = granted; false = not yet.
+    /// nil = status can't be read; true = granted; false = not yet.
     let granted: Bool?
     let actionLabel: String
     let action: () -> Void
     var busy = false
     var note: String?
+    /// Optional secondary action (e.g. a System Settings deep-link) shown as a quiet link below the note.
+    var secondaryLabel: String?
+    var secondaryAction: (() -> Void)?
 
     var body: some View {
         VStack(spacing: 16) {
@@ -51,6 +55,12 @@ struct OnboardingStepView: View {
                     .foregroundStyle(.tertiary)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 380)
+            }
+
+            if let secondaryLabel, let secondaryAction {
+                Button(secondaryLabel, action: secondaryAction)
+                    .buttonStyle(.link)
+                    .font(.caption)
             }
         }
     }

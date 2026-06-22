@@ -2,8 +2,8 @@ import XCTest
 @testable import INMeetingsCore
 
 /// Pure logic — drives both the wizard recap and the dashboard "Finish setup" nudge from one source of
-/// truth. System Audio has no readable TCC status, so it never appears in `outstanding` and can't gate
-/// `isSetUp` (only Microphone + Google form the "usable" floor; Screen Recording is video-only).
+/// truth. Only Microphone + Google form the "usable" floor; Screen & System Audio Recording is needed for
+/// the "Them" track + video but doesn't gate `isSetUp`.
 final class OnboardingChecklistTests: XCTestCase {
     private func snap(mic: Bool, screen: Bool, google: Bool) -> PermissionsSnapshot {
         PermissionsSnapshot(micGranted: mic, screenGranted: screen, googleConnected: google)
@@ -38,12 +38,5 @@ final class OnboardingChecklistTests: XCTestCase {
         let s = snap(mic: true, screen: true, google: false)
         XCTAssertEqual(OnboardingChecklist.outstanding(s), [.google])
         XCTAssertFalse(OnboardingChecklist.isSetUp(s))
-    }
-
-    func testSystemAudioNeverAppearsInOutstanding() {
-        // Even with everything readable granted, System Audio is unreadable and must not be nudged here.
-        for s in [snap(mic: true, screen: true, google: true), snap(mic: false, screen: false, google: false)] {
-            XCTAssertFalse(OnboardingChecklist.outstanding(s).contains(.systemAudio))
-        }
     }
 }

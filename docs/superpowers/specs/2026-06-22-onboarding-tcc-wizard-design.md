@@ -4,6 +4,13 @@
 non-technical teammate through the grants the app needs, with plain-language explanations and graceful
 fallbacks. P0 — the adoption gate. (ADR-009.)
 
+> **Amended 2026-06-22 (live-test):** macOS 15/26 has **no separate "System Audio Recording" grant** — it's
+> covered by **"Screen & System Audio Recording"** (confirmed: the Core-Audio-tap "Them" track records with
+> only Screen Recording granted). So the **System-Audio step was dropped (4 grants → 3)**, the screen step
+> relabeled, and `provokeSystemAudioPrompt` removed. Also fixed a two-button trap (single primary + "Skip for
+> now"), added Settings deep-links + re-check on return, and made the model download visible + manageable.
+> Sections below describing a separate System-Audio step are superseded — see DECISIONS 2026-06-22.
+
 ## Goal
 
 Installing IN Meetings shouldn't mean a wall of scary, unexplained system prompts. A first-launch wizard

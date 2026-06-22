@@ -80,6 +80,15 @@ public final class ModelManager {
         Self.modelsDirectory.appendingPathComponent(entry.filename)
     }
 
+    /// Absolute on-disk path of this manager's model (whether or not it's present yet) — for the Settings
+    /// "Reveal in Finder" / path display.
+    public nonisolated var fileURL: URL { destination }
+
+    /// Size on disk in bytes if the model is present, else nil — for the Settings size display.
+    public nonisolated var installedSizeBytes: Int? {
+        try? FileManager.default.attributesOfItem(atPath: destination.path)[.size] as? Int
+    }
+
     // MARK: - Lifecycle
 
     /// Idempotent: ready immediately if the file is already installed (size match), else kick off the
@@ -126,6 +135,23 @@ public final class ModelManager {
         guard case .failed = phase else { return }
         didStart = false
         phase = .absent
+        ensureReady()
+    }
+
+    /// Delete the installed model from disk and reset to `.absent` (Settings "Delete"). The next
+    /// `ensureReady()` re-provisions from the bundle (VAD) or re-downloads (Hebrew model).
+    public func delete() {
+        session?.invalidateAndCancel()
+        session = nil
+        try? FileManager.default.removeItem(at: destination)
+        didStart = false
+        phase = .absent
+        modelLog.notice("model deleted: \(self.destination.path, privacy: .public)")
+    }
+
+    /// Delete + re-fetch (Settings "Re-download").
+    public func redownload() {
+        delete()
         ensureReady()
     }
 
