@@ -61,6 +61,10 @@ run-mac: ## Launch the app (builds first if missing)
 
 RELEASE_PRODUCT := $(DERIVED_DATA)/Build/Products/Release/$(APP_NAME)
 
+.PHONY: reset-test-data
+reset-test-data: ## Reset per-user state (TCC/prefs/data) for a fresh onboarding test (KEEP_MODEL=1 by default)
+	@bash scripts/reset-app-data.sh
+
 .PHONY: dmg
 dmg: ## Build a LOCAL UNSIGNED Release .dmg for install/onboarding testing (NOT notarized)
 	@$(MAKE) gen >/dev/null   # regen so the project matches the current branch's files (esp. on feature branches)

@@ -34,6 +34,14 @@ launch-at-login behave differently from a DerivedData debug build).
 - This does **not** replace the Ship steps below — it's a stopgap to test the installer UX before the paid
   account lands.
 
+### `make reset-test-data` — fresh-install state (for repeat onboarding tests)
+macOS keeps per-user state that **`rm -rf` the .app + `tccutil reset` do NOT clear** — the app's preferences
+(incl. the `onboarding.completed` flag, so the wizard won't re-open), recordings, model cache, and the
+Keychain Google token. **`make reset-test-data`** (→ `scripts/reset-app-data.sh`) clears all of it for the
+**current user** (run it in the session you're testing), with a typed-`yes` confirm. It **keeps the ~1.5 GB
+model by default** (`KEEP_MODEL=0 make reset-test-data` to wipe it too). After it runs, reinstall/relaunch and
+onboarding auto-opens. ⚠️ Destructive — deletes local recordings + disconnects Google for that user.
+
 ---
 
 ## Step 0 — Check whether you already have access (may save the whole thing)
