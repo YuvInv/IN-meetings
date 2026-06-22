@@ -118,6 +118,12 @@ final class RecordingStore {
     /// Import a recording (optionally bound to a calendar event) and select it once processing starts.
     /// Reloads the list when the pipeline finishes (the existing `.jobBridgeDidFinish` observer covers it).
     func importRecording(from fileURL: URL, event: CalendarEvent?, start: Date, end: Date) async {
+        // JobBridge is a shared singleton with one watch timer; enqueueImport while a job is in flight would
+        // invalidate the live job's status watcher and orphan its indexing/Drive sync. Refuse until idle.
+        if let phase = jobBridge?.phase, phase != "done", phase != "failed" {
+            importError = "A recording is still being processed. Please wait for it to finish, then import."
+            return
+        }
         let importer = MeetingImporter(
             writePinnedContext: { dir, ev, s, e in CalendarContext().writePinnedInput(into: dir, event: ev, startedAt: s, endedAt: e) },
             enqueue: { [weak self] dir, name, s, e in self?.jobBridge?.enqueueImport(directory: dir, audioFilename: name, startedAt: s, endedAt: e) })

@@ -62,12 +62,12 @@ struct DashboardWindow: View {
     private func handleImport(_ result: Result<[URL], Error>) {
         guard case .success(let urls) = result, let url = urls.first else { return }
         let event = pendingEvent
+        pendingEvent = nil                       // clear synchronously, before the async work
         let (start, end) = Self.window(for: event)
         Task {
             let scoped = url.startAccessingSecurityScopedResource()
             defer { if scoped { url.stopAccessingSecurityScopedResource() } }
             await storeModel.importRecording(from: url, event: event, start: start, end: end)
-            pendingEvent = nil
         }
     }
 
