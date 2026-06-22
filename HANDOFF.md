@@ -6,7 +6,7 @@ Keep it short: last state, next steps, gotchas. History lives in git log.
 -->
 
 ## Outgoing Agent
-Claude Code · 2026-06-16
+Claude Code · 2026-06-22
 
 ## Current State
 **MVP spine is complete and merged to `main` (App UX slice 1 = PR #7, `46e5fe9`); local `main` synced.**
@@ -35,50 +35,32 @@ SQLite index → per-user Google Drive backup → Liquid Glass dashboard (browse
 
 ## Next — START HERE
 
-**Shipped + MERGED to `main` (2026-06-16):** [PR #10](https://github.com/YuvInv/IN-meetings/pull/10) **+
-[PR #11](https://github.com/YuvInv/IN-meetings/pull/11) BOTH MERGED.** #10 = P0 reliability (VAD bundled +
-pipeline failures surfaced), P1 call video (SCK window → `meeting.mp4` → Drive → playback), Drive folder
-picker (Google Picker web view), video-detail crash fix. #11 = A/V-sync rewrite (one SCK stream, one clock)
-+ ~6× smaller recordings (720p / 2 Mbps HEVC passthrough mux, 1.86 GB→~300 MB) + speaker naming + the
-committed Picker key. All live-verified. **Local `main` synced to `origin/main` `7b3a8d0`.**
+**Shipped + MERGED to `main` (2026-06-16):** [PR #10](https://github.com/YuvInv/IN-meetings/pull/10) ·
+[PR #11](https://github.com/YuvInv/IN-meetings/pull/11) · **[PR #12](https://github.com/YuvInv/IN-meetings/pull/12)** —
+all merged. **Local `main` synced to `origin/main` `78c8d05`.** #10/#11 = P0 reliability + P1 call video
+(one-SCK-stream A/V sync, ~6× smaller) + speaker naming + Drive folder picker (all live-verified).
 
-> ⚠️ **Branch-hygiene note (2026-06-16):** the prior session-wrap commit `5398a43` (this spec + the
-> DECISIONS / IMPLEMENTATION_PLAN / HANDOFF updates) sat on the **deleted** `feat/reliability-video-drive-picker`
-> tip and was **never merged** into `main` (PR #11 merged only up to `f1fe477`). Those 4 files were
-> **restored from `5398a43`** onto `feat/saventa-summary-autotrigger` (working tree), so they ride along in
-> this branch's PR. `main` on its own is missing them until this branch merges.
+**✅ saventa-summary auto-trigger — DONE (PR #12).** A finished **call** → `JobBridge` kicks Core
+`SummaryRunner` → headless `claude -p` over the package, fed an **app-bundled recipe + house-style** (no skill
+install; amends ADR-008) → writes `<folder>/summary.md` → dashboard **Summary** panel (running/done/failed +
+Copy/Retry/Summarize) + Drive. `CaptureSettings.autoSummary` (default on, calls only); `MeetingStore` v3
+(`summaryState`/`summaryError`/`summarySessionId`); `SummaryRunner` resolves `claude` on a GUI-safe PATH and
+degrades gracefully if it's absent. **Sevanta/CRM posting stays ON HOLD.** Core 90/90 + `make build-mac` green;
+`claude -p` verified end-to-end on the golden fixture. **⏳ Yuval's live-test (needs the GUI):** the Summary
+panel states + full record→auto-summary→Drive on a real call — `docs/manual-tests-saventa-summary.md`.
 
-**🟢 BUILT (code complete + end-to-end verified; pending UI live-test) on branch `feat/saventa-summary-autotrigger`: the `saventa-summary` auto-trigger.**
-Spec: `docs/superpowers/specs/2026-06-16-saventa-summary-autotrigger.md` (the **house-style file list is
-settled there** — the earlier open Q is resolved; use exactly that non-CRM vc-context set). Flow: meeting
-done → `JobBridge.indexCompletedPackage` kicks a new **`SummaryRunner`** → headless `claude -p` over the
-package, fed an **app-bundled recipe + house-style** via `--append-system-prompt` (**NOT** a globally-installed
-skill) → Claude writes `<folder>/summary.md` → dashboard "Summary" panel + Drive sync. Auto-on-finish
-(file-only, safe). **⚠️ Sevanta/CRM posting is ON HOLD — do NOT surface it.**
-- **Integration map (verified this session):** `JobBridge` (trigger after `driveBackup` in
-  `indexCompletedPackage`; reuse `.jobBridgeDidFinish` + a new `.summaryDidFinish`), `MeetingStore` (migration
-  **v3** adds `summaryState`/`summaryError`/`summarySessionId` + an `updateSummaryState(…)` method),
-  `DriveSync.textFileNames += "summary.md"` + `DriveAuth.reuploadPackageFile` (handle `.md` MIME),
-  `CaptureSettings.autoSummary` (default **on**), `MeetingDetailView` Summary panel. Recipe bundled under
-  `Apps/INMeetings/INMeetings/Resources/skills/saventa-summary/` (XcodeGen auto-bundles the `Resources` tree;
-  run `make gen` after adding files).
-- **Recipe source to vendor:** the **edited** installed SKILL.md at
-  `~/Library/Application Support/Claude/.../skills/saventa-summary/SKILL.md` (local-folder mode + writes
-  `summary.md`); house-style = `~/repos/claude-skills/vc-context/{critical-analysis,investment-thesis,
-  josh-preferences,writing-style}.md` + `vc-context/mom-examples/{anti-patterns,example-summary,
-  style-analysis}.md`. **Exclude** `crm-mappings.md` + `sevanta-api-reference.md`.
-
-**Build status (2026-06-16):** all 8 tasks done — vendored recipe + 7 house-style files (`Resources/skills/
-saventa-summary/`, bundled as an XcodeGen folder reference, **verified present in the built `.app`**);
-`MeetingStore` v3 (`summaryState`/`summaryError`/`summarySessionId` + `updateSummaryState`); `CaptureSettings.
-autoSummary` (default on); `SummaryRunner` (Core) + `DriveSync.syncSummary` / `DriveBackup.
-syncSummaryIfConfigured`; `JobBridge` auto-trigger (calls only, sequenced after Drive) + public `summarize(…)`;
-dashboard Summary panel + Settings toggle (jobBridge threaded App → DashboardWindow → RecordingStore). **Core
-`swift test` 90/90 green** (+8 SummaryRunner/Drive), **`make build-mac` green**. **END-TO-END VERIFIED:** a real
-`claude -p` run with the bundled recipe over the golden fixture wrote a correctly-formatted `summary.md`
-(literal asterisks preserved, transcript-only, blanks unpadded), exit 0, parseable `session_id`. **⏳ Still
-Yuval's live-test (needs the running app):** the dashboard Summary panel states + the full record→auto-summary
-flow on a real call → Drive. Checklist: `docs/manual-tests-saventa-summary.md`. **NOT committed yet.**
+**🟢 BUILT this session (2026-06-22, branch `feat/auto-stop-meeting-end`, pending live-verify): auto-stop on
+meeting end.** On the detector's **armed→idle** edge while recording, a **debounced visible countdown** card
+("Meeting ended — stopping in {n}s…", 12 s debounce / 30 s countdown) floats; at 0 it auto-stops + runs the
+normal pipeline, unless cancelled (**Keep recording** / **Stop now**). **Never silent.** Trigger = call-app
+audio-process exit (the existing `CallDetector` signal — answers the roadmap's "research meeting-end" ask).
+Architecture: pure Core **`AutoStopArbiter`** (tick-driven state machine, 9 unit tests) + app
+**`MeetingEndCoordinator`** (1 s timer + floating `NSPanel`) + Liquid Glass **`MeetingEndOverlay`** card;
+`MeetingDetectionSettings.autoStopEnabled` (default on) + a menu-bar toggle next to the start-prompt toggle;
+a DEBUG "Preview meeting-ended countdown" menu item. **Amends ADR-002 + supersedes the 2026-06-14
+keep-if-ignored choice** (DECISIONS 2026-06-22). Spec `docs/superpowers/specs/2026-06-22-auto-stop-design.md`.
+**Core 100/100 + `make build-mac` green. ⏳ Yuval's live-test (needs the GUI):** countdown + auto-stop +
+cancel paths on a real call — `docs/manual-tests-auto-stop.md`. Not yet PR'd.
 
 **Roadmap changes this session (DECISIONS 2026-06-16 + IMPLEMENTATION_PLAN):**
 - **Auto-stop when a meeting ends → now a v1 MUST-HAVE** (P1, was P2). Debounced prompt, never silent (the
@@ -90,9 +72,10 @@ flow on a real call → Drive. Checklist: `docs/manual-tests-saventa-summary.md`
 
 **Remaining roadmap gaps:** onboarding / TCC wizard (Mic + System-Audio + **Screen-Recording** + Google —
 the adoption gate, still TODO); **Ship** phase (Developer-ID sign + notarize + `.dmg` + launch-at-login +
-Sparkle — done LAST, gated on a $99 Apple Developer account; runbook `docs/distribution-setup.md`); the new
-**auto-stop** + **audio-upload** must-haves; a global cache-size cap. The in-app "AI overview" panel stays
-out of v1. Hybrid app shell ✅ (PR #8); company naming+edit ✅ (PR #9).
+Sparkle — done LAST, gated on a $99 Apple Developer account; runbook `docs/distribution-setup.md`); the
+**audio-upload** must-have; a global cache-size cap. **auto-stop ✅ built (pending live-verify, branch
+`feat/auto-stop-meeting-end`).** The in-app "AI overview" panel stays out of v1. Hybrid app shell ✅ (PR #8);
+company naming+edit ✅ (PR #9).
 
 ## Gotchas (verified)
 - **The Google Calendar API must be enabled in the OAuth client's GCP project (1062382667236).** Enabled

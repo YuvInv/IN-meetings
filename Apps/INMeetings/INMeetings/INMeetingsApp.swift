@@ -21,6 +21,7 @@ struct INMeetingsApp: App {
     @State private var promptSettings: MeetingDetectionSettings
     @State private var captureSettings: CaptureSettings
     @State private var promptCoordinator: MeetingPromptCoordinator
+    @State private var endCoordinator: MeetingEndCoordinator
     @State private var drive: DriveAuth
 
     init() {
@@ -41,13 +42,17 @@ struct INMeetingsApp: App {
         let coordinator = MeetingPromptCoordinator(detector: detector, recorder: recorder, settings: settings)
         _promptCoordinator = State(initialValue: coordinator)
         coordinator.start()   // float a "Record now" card on each detected call (Harvest 3)
+        let endCoordinator = MeetingEndCoordinator(detector: detector, recorder: recorder, settings: settings)
+        _endCoordinator = State(initialValue: endCoordinator)
+        endCoordinator.start()   // float a "Meeting ended — stopping in Ns…" countdown when a recorded call ends
         _drive = State(initialValue: DriveAuth())
     }
 
     var body: some Scene {
         MenuBarExtra {
             MenuContent(detector: detector, recorder: recorder, models: models,
-                        settings: promptSettings, coordinator: promptCoordinator, drive: drive)
+                        settings: promptSettings, coordinator: promptCoordinator,
+                        endCoordinator: endCoordinator, drive: drive)
         } label: {
             MenuBarLabel(detector: detector, recorder: recorder)
         }
@@ -71,6 +76,7 @@ private struct MenuContent: View {
     var models: ModelManager
     var settings: MeetingDetectionSettings
     var coordinator: MeetingPromptCoordinator
+    var endCoordinator: MeetingEndCoordinator
     var drive: DriveAuth
     @Environment(\.openWindow) private var openWindow
 
@@ -142,9 +148,13 @@ private struct MenuContent: View {
         if settings.isSnoozed {
             Button("Resume call prompts") { settings.resume() }
         }
+        Toggle("Offer to stop when the call ends", isOn: Binding(
+            get: { settings.autoStopEnabled },
+            set: { settings.autoStopEnabled = $0 }))
 
         #if DEBUG
         Button("Preview record prompt (debug)") { coordinator.previewPrompt() }
+        Button("Preview meeting-ended countdown (debug)") { endCoordinator.previewCountdown() }
         #endif
 
         Divider()
