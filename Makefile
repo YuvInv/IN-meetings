@@ -59,6 +59,13 @@ run-mac: ## Launch the app (builds first if missing)
 	@printf "$(GREEN)[run]$(NC) Launching $(APP_NAME)...\n"
 	@open "$(APP_PRODUCT)"
 
+.PHONY: dmg
+dmg: ## Build a LOCAL UNSIGNED .dmg for install/onboarding testing (NOT notarized — see scripts/make-dmg.sh)
+	@if [ ! -d "$(APP_PRODUCT)" ]; then $(MAKE) build-mac; fi
+	@printf "$(GREEN)[dmg]$(NC) Packaging the current build (unsigned, local testing only)...\n"
+	@bash scripts/make-dmg.sh "$(APP_PRODUCT)"
+	@printf "$(YELLOW)[dmg]$(NC) Open it, drag IN Meetings to Applications, then launch from /Applications.\n"
+
 .PHONY: verify-mac
 verify-mac: build-mac ## Build + launch + confirm the menu-bar process is alive
 	@pkill -x "$(PROC_NAME)" 2>/dev/null || true

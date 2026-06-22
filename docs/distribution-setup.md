@@ -17,6 +17,21 @@ viable channel**.
 - **No `Developer ID Application` cert** (the one required for distribution). ← the blocker.
 - `notarytool` present (1.1.2); **no** stored notarization credentials.
 
+## Interim: `make dmg` — a LOCAL, UNSIGNED test installer (no account needed)
+Until the Developer-ID pipeline above exists, **`make dmg`** (→ `scripts/make-dmg.sh`) packages the current
+build into `dist/INMeetings.dmg` — a drag-to-`/Applications` `.dmg` purely for **install + onboarding/TCC
+testing**, so you can exercise the as-installed flow (Screen-Recording-after-restart, launch-at-login behave
+differently from a DerivedData debug build).
+
+- **Not for distribution:** not notarized, not Developer-ID signed.
+- On the machine that built it, the `.dmg` has no quarantine flag and opens normally. Copied to **another**
+  Mac (download/AirDrop), Gatekeeper quarantines it → first launch needs **right-click → Open** (or
+  `xattr -dr com.apple.quarantine /Applications/INMeetings.app`).
+- Usage: `make build-mac && make dmg`, then open `dist/INMeetings.dmg`, drag to Applications, launch from
+  `/Applications`. `dist/` is git-ignored.
+- This does **not** replace the Ship steps below — it's a stopgap to test the installer UX before the paid
+  account lands.
+
 ---
 
 ## Step 0 — Check whether you already have access (may save the whole thing)
