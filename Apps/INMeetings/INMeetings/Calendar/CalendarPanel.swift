@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 import INMeetingsCore
 
 /// The dashboard's right-side day-agenda inspector. Pick an event → upload a recording bound to it, or
@@ -17,18 +18,24 @@ struct CalendarPanel: View {
                 header
                 Divider()
                 content
-                Divider()
-                Button { onUpload(nil) } label: {
-                    Label("Upload recording without an event…", systemImage: "waveform.badge.plus")
-                }
-                .buttonStyle(.borderless)
-                .padding(12)
             } else {
                 disconnected
             }
+            Divider()
+            // Always available — a no-event import has no Google dependency, so it must work even when
+            // the calendar (and the agenda above) is disconnected.
+            Button { onUpload(nil) } label: {
+                Label("Upload recording without an event…", systemImage: "waveform.badge.plus")
+            }
+            .buttonStyle(.borderless)
+            .padding(12)
         }
         .frame(minWidth: 280)
         .task { await model.load() }
+        .onReceive(NotificationCenter.default.publisher(for: .jobBridgeDidFinish)) { _ in
+            // A finished import may have added a recording for a visible event — refresh the ✓ markers.
+            Task { await model.load() }
+        }
     }
 
     private var header: some View {

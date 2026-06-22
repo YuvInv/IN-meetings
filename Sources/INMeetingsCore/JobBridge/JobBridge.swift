@@ -18,6 +18,12 @@ public final class JobBridge {
     private let python: URL
     private var watch: Timer?
     private var process: Process?
+    /// Pipeline runs deferred because a job was already in flight; drained FIFO on each terminal phase.
+    private var pendingStarts: [() -> Void] = []
+    /// True while a pipeline subprocess is running. Serializes spawns (`beginOrQueue`) so a second job —
+    /// e.g. a live recording stopped while an import is still transcribing — doesn't replace the running
+    /// job's status watcher and orphan its indexing/Drive sync.
+    private var isRunning = false
     /// The SQLite index (ADR-006). Opened lazily on first completion so tests that never finish a job
     /// don't touch Application Support; a failure to open is non-fatal (indexing is best-effort).
     /// `@ObservationIgnored` keeps the `@Observable` macro from making it computed (lazy needs storage).
@@ -86,8 +92,6 @@ public final class JobBridge {
     public func enqueue(_ result: CaptureSession.Result,
                         startedAt: Date = Date(), endedAt: Date = Date(),
                         captureSourceApp: String? = nil) {
-        phase = nil
-        lastError = nil
         let dir = result.directory
         let jobURL = dir.appendingPathComponent("job.json")
 
@@ -104,13 +108,13 @@ public final class JobBridge {
             return
         }
         let statusURL = dir.appendingPathComponent("status.json")
-        phase = "queued"
+        if !isRunning { lastError = nil; phase = "queued" }   // immediate feedback when idle; don't clobber a running job
         // Fetch calendar context (best-effort, short timeout) *before* spawning so the assembler has its
-        // context.input.json; then start the pipeline. A no-op when no Google account is connected.
+        // context.input.json; then start (or queue) the pipeline. A no-op when no Google account is connected.
         Task { @MainActor in
             await self.calendarContext?.writeInput(into: dir, startedAt: startedAt, endedAt: endedAt,
                                                    captureSourceApp: captureSourceApp)
-            self.spawn(jobURL: jobURL, statusURL: statusURL)
+            self.beginOrQueue { [weak self] in self?.spawn(jobURL: jobURL, statusURL: statusURL) }
         }
     }
 
@@ -118,8 +122,6 @@ public final class JobBridge {
     /// audio track (`audioFilename`) and — for the event-bound path — a pinned `context.input.json`
     /// (written by the import coordinator). Unlike `enqueue`, this does NOT fetch live calendar context.
     public func enqueueImport(directory: URL, audioFilename: String, startedAt: Date, endedAt: Date) {
-        phase = nil
-        lastError = nil
         let jobURL = directory.appendingPathComponent("job.json")
         let job = ImportJob.make(meetingId: directory.lastPathComponent, directory: directory,
                                  audioFilename: audioFilename, startedAt: startedAt, endedAt: endedAt)
@@ -134,8 +136,21 @@ public final class JobBridge {
             return
         }
         let statusURL = directory.appendingPathComponent("status.json")
-        phase = "queued"
-        spawn(jobURL: jobURL, statusURL: statusURL)
+        if !isRunning { lastError = nil; phase = "queued" }
+        beginOrQueue { [weak self] in self?.spawn(jobURL: jobURL, statusURL: statusURL) }
+    }
+
+    /// Start `start` now, or defer it behind a job that's already running. `JobBridge` tracks a single
+    /// process + status watcher, so two overlapping spawns would orphan the first's completion handling
+    /// (indexing/Drive sync). Serializing keeps a live recording and an import from clobbering each other.
+    private func beginOrQueue(_ start: @escaping () -> Void) {
+        if isRunning { pendingStarts.append(start) } else { start() }
+    }
+
+    /// Drain the next deferred pipeline run, if any — called when a job reaches a terminal phase.
+    private func startNextIfQueued() {
+        guard !pendingStarts.isEmpty else { return }
+        pendingStarts.removeFirst()()
     }
 
     /// The Swift→Python job contract (ADR-009), kept pure (`nonisolated`) for testability off the main
@@ -202,9 +217,13 @@ public final class JobBridge {
             phase = "failed"
             captureLog.error("jobbridge.spawn failed: \(error.localizedDescription, privacy: .public)")
             recordFailure(folder: jobURL.deletingLastPathComponent(), error: lastError)
+            isRunning = false
+            startNextIfQueued()
             return
         }
         self.process = process
+        isRunning = true
+        lastError = nil
         phase = "queued"
         captureLog.notice("jobbridge.spawned meeting=\(jobURL.deletingLastPathComponent().lastPathComponent, privacy: .public)")
         watchStatus(statusURL)
@@ -231,6 +250,8 @@ public final class JobBridge {
                     }
                     captureLog.notice("jobbridge.finished phase=\(phase, privacy: .public)")
                     timer.invalidate()
+                    self.isRunning = false
+                    self.startNextIfQueued()
                 }
             }
         }
