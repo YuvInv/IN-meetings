@@ -6,7 +6,7 @@ Keep it short: last state, next steps, gotchas. History lives in git log.
 -->
 
 ## Outgoing Agent
-Claude Code · 2026-06-22
+Claude Code · 2026-06-22 (calendar-upload feature session)
 
 ## Current State
 **MVP spine is complete and merged to `main` (App UX slice 1 = PR #7, `46e5fe9`); local `main` synced.**
@@ -34,6 +34,26 @@ SQLite index → per-user Google Drive backup → Liquid Glass dashboard (browse
   scripts before the cert exists.**
 
 ## Next — START HERE
+
+**🟢 BUILT this session (branch `feat/calendar-upload-context`, PR open, ⏳ live-verify): calendar-anchored
+audio import.** A right-side **day-agenda inspector** on the dashboard (`CalendarPanel` + Core
+`CalendarPanelModel`) → page days / ⟳ refresh → pick an event → **upload a recording bound to it** → the
+event's attendees/company/time enrich a **single-track** (`profile:"inPerson"`) Hebrew transcription, and the
+attendees become **one-tap speaker labels** (the existing chips — no detail-view change). No-event upload
+fallback in the footer; "✓ recorded" markers; an **Imported** badge. Reuses the pipeline unchanged via a
+**`context.input.json` pinned to the chosen event** + provenance in `job.json` (`source:"imported"`, read at
+index) so the **frozen `metadata.json` schema is untouched**. New `MeetingRecord` cols `source`+`calendarEventId`
+(migration v4). Imports are blocked while a live pipeline runs (shared `JobBridge`). **No voice-ID** (assisted
+labeling only); imported video is audio-only; auto-summary stays call-only. Logic lives in `INMeetingsCore`
+(unit-tested: Core **121**, pipeline **56**); only the view + dashboard wiring are app-target. Spec
+`docs/superpowers/specs/2026-06-22-calendar-upload-context-design.md`, plan
+`docs/superpowers/plans/2026-06-22-calendar-upload-context.md`, DECISIONS 2026-06-22. **⏳ Live-verify** (needs
+the GUI + Google connected): event-upload → attendees as speaker labels; no-event path; ✓-recorded + open; a
+video container's audio extracts. **Next queued feature:** the **modular/resizable meeting layout** (brief in
+PR #16 / `docs/next-session-plan`).
+
+NOTE: this branch was cut from `main`, whose HANDOFF text predates the session-6 rewrite still open in **PR #16**
+(`docs/next-session-plan`) — the older narrative below is retained to avoid a merge conflict with that PR.
 
 **Shipped + MERGED to `main` (2026-06-16):** [PR #10](https://github.com/YuvInv/IN-meetings/pull/10) ·
 [PR #11](https://github.com/YuvInv/IN-meetings/pull/11) · **[PR #12](https://github.com/YuvInv/IN-meetings/pull/12)** —
