@@ -108,6 +108,8 @@ public final class JobBridge {
             return
         }
         let statusURL = dir.appendingPathComponent("status.json")
+        _ = try? store?.markProcessing(folder: dir)   // show the meeting (with a spinner) immediately
+        notifyDashboard()
         if !isRunning { lastError = nil; phase = "queued" }   // immediate feedback when idle; don't clobber a running job
         // Fetch calendar context (best-effort, short timeout) *before* spawning so the assembler has its
         // context.input.json; then start (or queue) the pipeline. A no-op when no Google account is connected.
@@ -136,6 +138,8 @@ public final class JobBridge {
             return
         }
         let statusURL = directory.appendingPathComponent("status.json")
+        _ = try? store?.markProcessing(folder: directory)   // show the imported meeting (with a spinner) immediately
+        notifyDashboard()
         if !isRunning { lastError = nil; phase = "queued" }
         beginOrQueue { [weak self] in self?.spawn(jobURL: jobURL, statusURL: statusURL) }
     }

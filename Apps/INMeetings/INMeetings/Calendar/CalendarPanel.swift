@@ -15,11 +15,13 @@ struct CalendarPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if drive.isConnected {
-                header
+                header   // pinned at the top — the content below fills the rest so it never shifts
                 Divider()
                 content
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             } else {
                 disconnected
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             Divider()
             // Always available — a no-event import has no Google dependency, so it must work even when
@@ -30,7 +32,7 @@ struct CalendarPanel: View {
             .buttonStyle(.borderless)
             .padding(12)
         }
-        .frame(minWidth: 280)
+        .frame(minWidth: 280, maxHeight: .infinity, alignment: .top)
         .task { await model.load() }
         .onReceive(NotificationCenter.default.publisher(for: .jobBridgeDidFinish)) { _ in
             // A finished import may have added a recording for a visible event — refresh the ✓ markers.
@@ -60,7 +62,7 @@ struct CalendarPanel: View {
     @ViewBuilder private var content: some View {
         switch model.state {
         case .loading:
-            ProgressView().frame(maxWidth: .infinity).padding(24)
+            ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)   // centered; header stays put
         case .error(let message):
             VStack(spacing: 8) {
                 ContentUnavailableView("Couldn't load calendar", systemImage: "calendar.badge.exclamationmark",

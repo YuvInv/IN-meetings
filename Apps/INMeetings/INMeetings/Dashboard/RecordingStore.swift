@@ -24,6 +24,7 @@ final class RecordingStore {
         self.store = store
         self.drive = drive
         self.jobBridge = jobBridge
+        store?.reconcile()   // self-heal: index any meeting whose completion the watcher missed (relaunch)
         load()
         // Reload when a pipeline job finishes/fails (JobBridge) or a summary completes (SummaryRunner) so
         // newly-done, failed, and summarized meetings appear live without reopening the window.
@@ -138,6 +139,6 @@ final class RecordingStore {
 }
 
 enum DashboardSelection: Hashable {
-    case allMeetings, needsLinking, processing
+    case allMeetings
     case meeting(String)
 }

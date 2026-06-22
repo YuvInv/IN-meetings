@@ -4,15 +4,9 @@ import SwiftUI
 
 struct DashboardSidebar: View {
     @Binding var selection: DashboardSelection?
-    let needsLinkingCount: Int
-    let processingCount: Int
     var body: some View {
         List(selection: $selection) {
             Label("All Meetings", systemImage: "tray.full").tag(DashboardSelection.allMeetings)
-            Label("Needs linking", systemImage: "link.badge.plus")
-                .badge(needsLinkingCount).tag(DashboardSelection.needsLinking)
-            Label("Processing", systemImage: "gearshape.2")
-                .badge(processingCount).tag(DashboardSelection.processing)
         }
         .listStyle(.sidebar)
         .safeAreaInset(edge: .bottom) {

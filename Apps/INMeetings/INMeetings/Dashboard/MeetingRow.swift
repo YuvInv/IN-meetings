@@ -7,19 +7,30 @@ struct MeetingRow: View {
     let meeting: MeetingRecord
     let isSelected: Bool
     var body: some View {
+        let isProcessing = meeting.status == "processing"
         HStack(alignment: .top, spacing: 12) {
-            Image(systemName: meeting.type == "in_person" ? "person.wave.2" : "phone")
-                .foregroundStyle(.tint).frame(width: 24).padding(.top, 2)
+            Group {
+                if isProcessing {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Image(systemName: meeting.type == "in_person" ? "person.wave.2" : "phone")
+                        .foregroundStyle(.tint)
+                }
+            }
+            .frame(width: 24).padding(.top, 2)
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .firstTextBaseline) {
-                    Text(meeting.company?.isEmpty == false ? meeting.company! : "Unknown company")
+                    Text(isProcessing && (meeting.company ?? "").isEmpty ? "Processing…"
+                         : (meeting.company?.isEmpty == false ? meeting.company! : "Unknown company"))
                         .font(.headline).lineLimit(1)
                     if let t = meeting.title, !t.isEmpty {
                         Text("· \(t)").font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
                     }
                     Spacer(minLength: 8)
-                    Text(durationString(meeting.durationSeconds))
-                        .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                    if !isProcessing {
+                        Text(durationString(meeting.durationSeconds))
+                            .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                    }
                 }
                 HStack(spacing: 6) {
                     chip(meeting.type == "in_person" ? "in-person" : "call", "phone", .secondary)
@@ -27,10 +38,11 @@ struct MeetingRow: View {
                         Text("Imported").font(.caption2).padding(.horizontal, 5).padding(.vertical, 1)
                             .background(.tint.opacity(0.15), in: Capsule()).foregroundStyle(.tint)
                     }
+                    if isProcessing { chip("processing", "gearshape.2", .blue) }
                     if meeting.status == "failed" { chip("failed", "exclamationmark.triangle.fill", .red) }
                     if meeting.syncState == "synced" { chip("synced", "cloud.fill", .green) }
                     if meeting.biased { chip("context", "sparkles", .blue) }
-                    if meeting.status != "failed" && (meeting.company ?? "").isEmpty {
+                    if !isProcessing && meeting.status != "failed" && (meeting.company ?? "").isEmpty {
                         chip("link?", "link", .orange)
                     }
                 }

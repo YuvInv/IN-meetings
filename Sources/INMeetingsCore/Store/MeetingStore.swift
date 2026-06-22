@@ -114,6 +114,55 @@ public final class MeetingStore {
         return record
     }
 
+    /// Insert a lightweight `"processing"` row the moment a job starts, so the meeting shows in the
+    /// dashboard (with a spinner) immediately instead of only appearing when the pipeline finishes. Reads
+    /// the record-time facts from `job.json`. Non-destructive + idempotent: a real `"transcribed"`/
+    /// `"failed"` row is left untouched (so a re-run never hides a finished or failed meeting).
+    @discardableResult
+    public func markProcessing(folder: URL) throws -> MeetingRecord? {
+        let id = folder.lastPathComponent
+        if let existing = try meeting(id: id), existing.status == "transcribed" || existing.status == "failed" {
+            return existing
+        }
+        let job = (try? Data(contentsOf: folder.appendingPathComponent("job.json")))
+            .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+        let nowISO = ISO8601DateFormatter().string(from: Date())
+        let type = (job["profile"] as? String) == CaptureProfile.inPerson.rawValue ? "in_person" : "call"
+        let record = MeetingRecord(
+            id: id, company: nil, title: nil, type: type,
+            startedAt: job["started_at"] as? String ?? nowISO,
+            endedAt: job["ended_at"] as? String ?? nowISO,
+            durationSeconds: nil, status: "processing", speakerCount: 0,
+            diarized: false, biased: false, modelRevision: nil,
+            captureSourceApp: job["capture_source_app"] as? String,
+            folderPath: folder.path, consentStatus: nil, driveFolderId: nil,
+            syncState: "local", pipelineError: nil,
+            source: (job["source"] as? String) ?? "live", calendarEventId: nil)
+        try dbQueue.write { db in try record.save(db) }
+        return record
+    }
+
+    /// Reconcile the index with what's on disk — called on launch. Indexes any completed package whose
+    /// completion the live `JobBridge` watcher missed (e.g. the app was relaunched mid-transcription, which
+    /// otherwise leaves a finished meeting invisible forever), and surfaces a not-yet-started job as
+    /// `"processing"`. Best-effort per folder; the on-disk package is the source of truth.
+    public func reconcile(recordingsRoot: URL = RecordingsStore.root) {
+        let fm = FileManager.default
+        guard let folders = try? fm.contentsOfDirectory(
+            at: recordingsRoot, includingPropertiesForKeys: [.isDirectoryKey]) else { return }
+        for folder in folders {
+            guard (try? folder.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true else { continue }
+            let hasMetadata = fm.fileExists(atPath: folder.appendingPathComponent("metadata.json").path)
+            let hasJob = fm.fileExists(atPath: folder.appendingPathComponent("job.json").path)
+            let existing = try? meeting(id: folder.lastPathComponent)
+            if hasMetadata {
+                if existing?.status != "transcribed" { _ = try? indexPackage(at: folder) }
+            } else if hasJob, existing == nil {
+                _ = try? markProcessing(folder: folder)
+            }
+        }
+    }
+
     // MARK: - Queries
 
     /// Every meeting, most recent first (the dashboard list, ADR-007).
