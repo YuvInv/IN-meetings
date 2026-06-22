@@ -347,7 +347,7 @@ final class ImportJobTests: XCTestCase {
         XCTAssertEqual(job["meeting_id"] as? String, "2026-06-22_10-00-00")
         XCTAssertEqual(job["directory"] as? String, dir.path)
         XCTAssertEqual(job["profile"] as? String, "inPerson")
-        XCTAssertEqual(job["source"] as? String, "import")
+        XCTAssertEqual(job["source"] as? String, "imported")
         XCTAssertEqual(job["video"] as? Bool, false)
         XCTAssertEqual((job["tracks"] as? [String: String])?["mic"], "audio.wav")
         XCTAssertNil((job["tracks"] as? [String: String])?["system"])
@@ -372,7 +372,7 @@ import Foundation
 /// Builds the synthetic `job.json` for an imported recording (ADR-009 contract, mirrored in `pipeline/
 /// job.py`). An import is always a single mixed track → `profile: "inPerson"` (the only profile that
 /// diarizes one track into N speakers) and `tracks.mic` points at the normalized WAV. The extra
-/// `source: "import"` key is read back at index time (MeetingStore) for provenance; `Job.load` ignores
+/// `source: "imported"` key is read back at index time (MeetingStore) for provenance; `Job.load` ignores
 /// it. Kept pure for testability.
 public enum ImportJob {
     public static func make(meetingId: String, directory: URL, audioFilename: String,
@@ -387,7 +387,7 @@ public enum ImportJob {
             "ended_at": iso.string(from: endedAt),
             "created_at": iso.string(from: endedAt),
             "video": false,
-            "source": "import",
+            "source": "imported",
         ]
     }
 }
@@ -1309,7 +1309,7 @@ def test_import_job_tolerates_source_key(tmp_path: Path) -> None:
     job_json = {
         "meeting_id": "imp-1", "directory": str(tmp_path), "profile": "inPerson",
         "tracks": {"mic": "audio.wav"}, "started_at": "2026-06-22T10:00:00Z",
-        "ended_at": "2026-06-22T10:30:00Z", "video": False, "source": "import",
+        "ended_at": "2026-06-22T10:30:00Z", "video": False, "source": "imported",
     }
     p = tmp_path / "job.json"
     p.write_text(json.dumps(job_json), encoding="utf-8")
@@ -1335,7 +1335,7 @@ def test_pinned_single_candidate_fills_metadata(tmp_path: Path) -> None:
     # like test_context.py::test_run_invokes_assembler_and_packages. profile inPerson + the import source key.
     job = {"meeting_id": "imp-1", "directory": str(tmp_path), "profile": "inPerson",
            "tracks": {}, "started_at": "2026-06-22T10:00:00Z", "ended_at": "2026-06-22T10:30:00Z",
-           "source": "import"}
+           "source": "imported"}
     (tmp_path / "job.json").write_text(json.dumps(job), encoding="utf-8")
 
     assert run(tmp_path / "job.json") == 0
