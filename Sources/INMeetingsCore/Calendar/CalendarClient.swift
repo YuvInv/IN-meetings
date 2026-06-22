@@ -21,7 +21,7 @@ public final class CalendarClient: @unchecked Sendable {
     // MARK: - Pure helpers (unit-tested)
 
     /// Windowed events query on the user's `primary` calendar (timed, expanded, time-ordered).
-    static func eventsURL(timeMin: Date, timeMax: Date) -> URL {
+    static func eventsURL(timeMin: Date, timeMax: Date, maxResults: Int = 10) -> URL {
         let iso = ISO8601DateFormatter()
         var components = URLComponents(url: apiBase.appendingPathComponent("calendars/primary/events"),
                                        resolvingAgainstBaseURL: false)!
@@ -30,7 +30,7 @@ public final class CalendarClient: @unchecked Sendable {
             URLQueryItem(name: "timeMax", value: iso.string(from: timeMax)),
             URLQueryItem(name: "singleEvents", value: "true"),
             URLQueryItem(name: "orderBy", value: "startTime"),
-            URLQueryItem(name: "maxResults", value: "10"),
+            URLQueryItem(name: "maxResults", value: String(maxResults)),
             URLQueryItem(name: "fields", value: fields),
         ]
         return components.url!
@@ -43,8 +43,8 @@ public final class CalendarClient: @unchecked Sendable {
     // MARK: - API
 
     /// Candidate events overlapping the window. Throws on a non-2xx response (caller degrades).
-    public func fetchEvents(timeMin: Date, timeMax: Date) async throws -> [CalendarEvent] {
-        var request = URLRequest(url: Self.eventsURL(timeMin: timeMin, timeMax: timeMax))
+    public func fetchEvents(timeMin: Date, timeMax: Date, maxResults: Int = 10) async throws -> [CalendarEvent] {
+        var request = URLRequest(url: Self.eventsURL(timeMin: timeMin, timeMax: timeMax, maxResults: maxResults))
         request.setValue("Bearer \(try await token())", forHTTPHeaderField: "Authorization")
         let (data, response) = try await session.data(for: request)
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
