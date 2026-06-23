@@ -6,7 +6,7 @@ Keep it short: last state, next steps, gotchas. History lives in git log.
 -->
 
 ## Outgoing Agent
-Claude Code · 2026-06-23 (calendar-upload feature session)
+Claude Code · 2026-06-23 (modular/resizable meeting layout session)
 
 ## Current State
 **Road-to-v1 nearly complete; `main` is at the PR #14 merge.** End-to-end: detect → dual-track capture →
@@ -51,9 +51,20 @@ sidebar; calendar toggle on the detail trailing edge. Core **124** + pipeline **
 recording + a video-container import. Spec/plan: `docs/superpowers/{specs,plans}/2026-06-22-calendar-upload-context*`;
 DECISIONS 2026-06-22.
 
-**NEXT — START HERE: feature #2 — modular / resizable meeting layout.** Make `MeetingDetailView`'s **video /
-summary / transcript** panes resizable (today a fixed `VStack`; likely `HSplitView`/`VSplitView` + persisted
-sizes, adapting when there's no video). **Brief: `docs/superpowers/specs/2026-06-22-modular-meeting-layout-brief.md`.**
+**✅ DONE this session (2026-06-23) → branch `feat/modular-meeting-layout` (⏳ live-verify + open PR): feature
+#2 — modular / resizable meeting layout.** `MeetingDetailView` is now **side-by-side**: a left context column
+(video + collapsible summary) beside a full-height transcript, drag-resizable with **globally-persisted**
+divider sizes (`@AppStorage` `detail.columnSplit`/`detail.mediaSplit`). Adapts to **Summary | Transcript**
+(audio-only) and to a **full-width transcript** (no context). Summary hides via a header **"Summary"** toggle
+(`showSummaryPane`). New pure Core `SplitLayout` (clamp math, **12 tests**) backs a reusable app-target
+`ResizableSplit` (Liquid Glass handle). Core **136** + `make build-mac` green; layout-only (no schema/behavior
+change). Spec/plan: `docs/superpowers/{specs/2026-06-23-modular-meeting-layout-design,plans/2026-06-23-modular-meeting-layout}.md`;
+manual-tests `docs/manual-tests-modular-layout.md`; DECISIONS 2026-06-23. ⏳ **Live-verify**: video + audio
+meeting, drag both dividers, toggle summary, relaunch for persistence; **known nit** — summary-toggle on an
+audio meeting may reset the transcript scroll (deferred until we see if it's noticeable).
+
+**NEXT — START HERE:** the remaining v1 gaps below — the **Ship** phase (gated on the $99 Apple Developer
+account) and a **global cache-size cap**. No designed-but-unbuilt feature is queued.
 
 **Other remaining v1 gaps:** **Ship** phase (Developer-ID sign + notarize + `.dmg` + launch-at-login + Sparkle
 — done LAST, gated on a **$99 Apple Developer account**; runbook `docs/distribution-setup.md`; interim
