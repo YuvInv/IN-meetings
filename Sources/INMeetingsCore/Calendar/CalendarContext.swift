@@ -53,6 +53,22 @@ public final class CalendarContext: @unchecked Sendable {
         }
     }
 
+    /// Fetch events overlapping `[timeMin, timeMax]` (the calendar panel's per-day query). Higher
+    /// `maxResults` than the live candidate fetch since a full day can hold many events.
+    public func fetchEvents(timeMin: Date, timeMax: Date) async throws -> [CalendarEvent] {
+        try await client.fetchEvents(timeMin: timeMin, timeMax: timeMax, maxResults: 250)
+    }
+
+    /// Write `context.input.json` pinned to ONE chosen event (the import path): the Python assembler
+    /// matches by window overlap, so we set the hint window to the event's own start/end → a 100% overlap
+    /// makes it the unambiguous match. No network call (the event is already in hand). Best-effort.
+    public func writePinnedInput(into directory: URL, event: CalendarEvent, startedAt: Date, endedAt: Date) {
+        let domain = tokenStore.load().map { Self.domain(ofEmail: $0.account) } ?? ""
+        let payload = Self.inputPayload(internalDomain: domain, candidates: [event],
+                                        captureSourceApp: nil, startedAt: startedAt, endedAt: endedAt)
+        try? Self.write(payload, into: directory)
+    }
+
     /// Atomically write a payload to `<meeting>/context.input.json`.
     static func write(_ payload: [String: Any], into directory: URL) throws {
         let data = try JSONSerialization.data(withJSONObject: payload, options: [.prettyPrinted, .sortedKeys])

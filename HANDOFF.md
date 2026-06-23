@@ -6,7 +6,7 @@ Keep it short: last state, next steps, gotchas. History lives in git log.
 -->
 
 ## Outgoing Agent
-Claude Code · 2026-06-22 (session 6)
+Claude Code · 2026-06-23 (calendar-upload feature session)
 
 ## Current State
 **Road-to-v1 nearly complete; `main` is at the PR #14 merge.** End-to-end: detect → dual-track capture →
@@ -34,17 +34,26 @@ Earlier on `main`: hybrid app shell (PR #8), company naming (#9), reliability/VA
 
 ## Next — START HERE
 
-**Two features captured for THIS session — design briefs written; brainstorm → spec → build:**
-1. **Calendar-driven audio upload + context** (reshapes the old "audio-file upload" must-have). A **right-side
-   calendar panel** on the dashboard (after Google connect) → click a meeting → **upload an audio file + assign
-   it to that meeting** → the event's context (time/attendees/company) enriches the package and gives candidate
-   identities for the diarized speakers. **Reality to align on:** an uploaded file is a single mixed track;
-   diarization separates speakers but true voice-ID auto-naming is a **separate project** — v1 = assisted
-   labelling from the attendee list. Reuses `CalendarClient`/`CalendarContext` + the synthetic-`job.json`
-   import path + `SpeakerEditor`. **Brief: `docs/superpowers/specs/2026-06-22-calendar-upload-context-brief.md`.**
-2. **Modular / resizable meeting layout** (after #1). Make `MeetingDetailView`'s **video / summary / transcript**
-   panes resizable (today a fixed `VStack`; likely `HSplitView`/`VSplitView` + persisted sizes, adapting when
-   there's no video). **Brief: `docs/superpowers/specs/2026-06-22-modular-meeting-layout-brief.md`.**
+**✅ DONE this session (2026-06-23) → [PR #17](https://github.com/YuvInv/IN-meetings/pull/17), branch
+`feat/calendar-upload-context` (⏳ live-verify + merge): feature #1 below — calendar-driven audio upload +
+context.** A right-side **day-agenda inspector** (`CalendarPanel` + Core `CalendarPanelModel`) → page days /
+⟳ refresh → pick an event → **upload a recording bound to it** → the event's attendees/company/time enrich a
+**single-track** (`profile:"inPerson"`) Hebrew transcription, and the attendees become **one-tap speaker
+labels** (existing chips — no detail-view change). No-event footer fallback; "✓ recorded" markers; **Imported**
+badge. Pipeline reused **unchanged** via a `context.input.json` **pinned to the chosen event** + provenance in
+`job.json` (`source:"imported"`, read at index) so the frozen `metadata.json` schema is untouched. New
+`MeetingRecord` cols `source`+`calendarEventId` (**migration v4**). **No voice-ID** (assisted labeling only);
+imported video is audio-only; auto-summary stays call-only. Reliability: `JobBridge` **serializes** concurrent
+runs; meetings show a **processing spinner** immediately; the index **self-heals on launch**
+(`MeetingStore.reconcile`). Sidebar simplified to **All Meetings** + per-row spinner; search moved to the
+sidebar; calendar toggle on the detail trailing edge. Core **124** + pipeline **56** + build green;
+**live-verified on a real ~40-min Hebrew call**. ⏳ still verify: 3+ diarization on an imported 2-person
+recording + a video-container import. Spec/plan: `docs/superpowers/{specs,plans}/2026-06-22-calendar-upload-context*`;
+DECISIONS 2026-06-22.
+
+**NEXT — START HERE: feature #2 — modular / resizable meeting layout.** Make `MeetingDetailView`'s **video /
+summary / transcript** panes resizable (today a fixed `VStack`; likely `HSplitView`/`VSplitView` + persisted
+sizes, adapting when there's no video). **Brief: `docs/superpowers/specs/2026-06-22-modular-meeting-layout-brief.md`.**
 
 **Other remaining v1 gaps:** **Ship** phase (Developer-ID sign + notarize + `.dmg` + launch-at-login + Sparkle
 — done LAST, gated on a **$99 Apple Developer account**; runbook `docs/distribution-setup.md`; interim

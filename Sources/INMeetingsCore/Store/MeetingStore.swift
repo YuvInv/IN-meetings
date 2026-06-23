@@ -42,6 +42,10 @@ public final class MeetingStore {
         let durations = metadata.recording.durations
         let duration = durations?["mic"] ?? durations?.values.max()
 
+        let jobSource = (try? Data(contentsOf: folder.appendingPathComponent("job.json")))
+            .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+            .flatMap { $0["source"] as? String } ?? "live"
+
         let record = MeetingRecord(
             id: folder.lastPathComponent,
             company: metadata.company?.name,
@@ -60,7 +64,9 @@ public final class MeetingStore {
             consentStatus: metadata.consent?.status,
             driveFolderId: nil,   // set by slice 6 (Drive sync) via a dedicated update path
             syncState: "local",
-            pipelineError: nil    // a successful (re-)index clears any prior failure
+            pipelineError: nil,   // a successful (re-)index clears any prior failure
+            source: jobSource,
+            calendarEventId: metadata.meeting.calendarEventId
         )
         try dbQueue.write { db in try record.save(db) }
         return record
@@ -100,10 +106,61 @@ public final class MeetingStore {
             consentStatus: existing?.consentStatus,
             driveFolderId: existing?.driveFolderId,
             syncState: existing?.syncState ?? "local",
-            pipelineError: error ?? "Transcription failed (see pipeline.log)."
+            pipelineError: error ?? "Transcription failed (see pipeline.log).",
+            source: (job["source"] as? String) ?? existing?.source ?? "live",
+            calendarEventId: existing?.calendarEventId
         )
         try dbQueue.write { db in try record.save(db) }
         return record
+    }
+
+    /// Insert a lightweight `"processing"` row the moment a job starts, so the meeting shows in the
+    /// dashboard (with a spinner) immediately instead of only appearing when the pipeline finishes. Reads
+    /// the record-time facts from `job.json`. Non-destructive + idempotent: a real `"transcribed"`/
+    /// `"failed"` row is left untouched (so a re-run never hides a finished or failed meeting).
+    @discardableResult
+    public func markProcessing(folder: URL) throws -> MeetingRecord? {
+        let id = folder.lastPathComponent
+        if let existing = try meeting(id: id), existing.status == "transcribed" || existing.status == "failed" {
+            return existing
+        }
+        let job = (try? Data(contentsOf: folder.appendingPathComponent("job.json")))
+            .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+        let nowISO = ISO8601DateFormatter().string(from: Date())
+        let type = (job["profile"] as? String) == CaptureProfile.inPerson.rawValue ? "in_person" : "call"
+        let record = MeetingRecord(
+            id: id, company: nil, title: nil, type: type,
+            startedAt: job["started_at"] as? String ?? nowISO,
+            endedAt: job["ended_at"] as? String ?? nowISO,
+            durationSeconds: nil, status: "processing", speakerCount: 0,
+            diarized: false, biased: false, modelRevision: nil,
+            captureSourceApp: job["capture_source_app"] as? String,
+            folderPath: folder.path, consentStatus: nil, driveFolderId: nil,
+            syncState: "local", pipelineError: nil,
+            source: (job["source"] as? String) ?? "live", calendarEventId: nil)
+        try dbQueue.write { db in try record.save(db) }
+        return record
+    }
+
+    /// Reconcile the index with what's on disk — called on launch. Indexes any completed package whose
+    /// completion the live `JobBridge` watcher missed (e.g. the app was relaunched mid-transcription, which
+    /// otherwise leaves a finished meeting invisible forever), and surfaces a not-yet-started job as
+    /// `"processing"`. Best-effort per folder; the on-disk package is the source of truth.
+    public func reconcile(recordingsRoot: URL = RecordingsStore.root) {
+        let fm = FileManager.default
+        guard let folders = try? fm.contentsOfDirectory(
+            at: recordingsRoot, includingPropertiesForKeys: [.isDirectoryKey]) else { return }
+        for folder in folders {
+            guard (try? folder.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true else { continue }
+            let hasMetadata = fm.fileExists(atPath: folder.appendingPathComponent("metadata.json").path)
+            let hasJob = fm.fileExists(atPath: folder.appendingPathComponent("job.json").path)
+            let existing = try? meeting(id: folder.lastPathComponent)
+            if hasMetadata {
+                if existing?.status != "transcribed" { _ = try? indexPackage(at: folder) }
+            } else if hasJob, existing == nil {
+                _ = try? markProcessing(folder: folder)
+            }
+        }
     }
 
     // MARK: - Queries
@@ -151,6 +208,23 @@ public final class MeetingStore {
         }
     }
 
+    /// The set of calendar event ids that already have a recording (any source). Powers the panel's
+    /// "✓ recorded" marker. Distinct, non-null only.
+    public func calendarEventIdsWithRecording() throws -> Set<String> {
+        try dbQueue.read { db in
+            Set(try String.fetchAll(db,
+                sql: "SELECT DISTINCT calendarEventId FROM meeting WHERE calendarEventId IS NOT NULL"))
+        }
+    }
+
+    /// The most recent meeting bound to a calendar event, if any (click-through from the panel).
+    public func meeting(forCalendarEventId eventId: String) throws -> MeetingRecord? {
+        try dbQueue.read { db in
+            try MeetingRecord.filter(Column("calendarEventId") == eventId)
+                .order(Column("startedAt").desc).fetchOne(db)
+        }
+    }
+
     // MARK: - Schema
 
     private static var migrator: DatabaseMigrator {
@@ -193,6 +267,16 @@ public final class MeetingStore {
                 t.add(column: "summarySessionId", .text)    // claude -p session id, for a later --resume
             }
         }
+        migrator.registerMigration("v4-import-source") { db in
+            // Provenance of an imported recording vs a live capture, and the calendar event it's bound to
+            // (the latter also backfills live captures that matched an event, so the calendar panel can
+            // mark events "✓ recorded"). `source` is NOT NULL with a "live" default so existing rows are
+            // unambiguous; `calendarEventId` is nullable (no-event imports + unmatched live captures).
+            try db.alter(table: MeetingRecord.databaseTableName) { t in
+                t.add(column: "source", .text).notNull().defaults(to: "live")
+                t.add(column: "calendarEventId", .text)
+            }
+        }
         return migrator
     }
 }
@@ -228,4 +312,9 @@ public struct MeetingRecord: Codable, FetchableRecord, PersistableRecord, Sendab
     public var summaryError: String? = nil
     /// The `claude -p` session id from the summary run, so a later "ask a follow-up" can `--resume`.
     public var summarySessionId: String? = nil
+    /// "live" (default) | "imported" — provenance, surfaced as the dashboard "Imported" badge.
+    public var source: String = "live"
+    /// The Google Calendar event id this meeting is bound to (nil = none). Lets the calendar panel mark
+    /// events as already recorded and open them. Filled from `metadata.meeting.calendarEventId` at index.
+    public var calendarEventId: String? = nil
 }

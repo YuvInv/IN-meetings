@@ -24,6 +24,7 @@ final class RecordingStore {
         self.store = store
         self.drive = drive
         self.jobBridge = jobBridge
+        store?.reconcile()   // self-heal: index any meeting whose completion the watcher missed (relaunch)
         load()
         // Reload when a pipeline job finishes/fails (JobBridge) or a summary completes (SummaryRunner) so
         // newly-done, failed, and summarized meetings appear live without reopening the window.
@@ -99,9 +100,45 @@ final class RecordingStore {
         }
         return nil
     }
+
+    // MARK: - Calendar import passthroughs
+
+    /// Calendar event ids that already have a recording (panel "✓ recorded" markers).
+    func recordedCalendarEventIds() -> Set<String> {
+        (try? store?.calendarEventIdsWithRecording()) ?? []
+    }
+
+    /// Open the meeting bound to a calendar event (panel click-through).
+    func openMeeting(forCalendarEventId eventId: String) {
+        if let m = try? store?.meeting(forCalendarEventId: eventId) { selection = .meeting(m.id) }
+    }
+
+    /// Surfaced as an alert by the dashboard when an import fails before processing.
+    var importError: String?
+
+    /// Import a recording (optionally bound to a calendar event) and select it once processing starts.
+    /// Reloads the list when the pipeline finishes (the existing `.jobBridgeDidFinish` observer covers it).
+    func importRecording(from fileURL: URL, event: CalendarEvent?, start: Date, end: Date) async {
+        // JobBridge is a shared singleton with one watch timer; enqueueImport while a job is in flight would
+        // invalidate the live job's status watcher and orphan its indexing/Drive sync. Refuse until idle.
+        if let phase = jobBridge?.phase, phase != "done", phase != "failed" {
+            importError = "A recording is still being processed. Please wait for it to finish, then import."
+            return
+        }
+        let importer = MeetingImporter(
+            writePinnedContext: { dir, ev, s, e in CalendarContext().writePinnedInput(into: dir, event: ev, startedAt: s, endedAt: e) },
+            enqueue: { [weak self] dir, name, s, e in self?.jobBridge?.enqueueImport(directory: dir, audioFilename: name, startedAt: s, endedAt: e) })
+        do {
+            let id = try await importer.importRecording(from: fileURL, event: event, start: start, end: end)
+            load()
+            selection = .meeting(id)
+        } catch {
+            importError = error.localizedDescription
+        }
+    }
 }
 
 enum DashboardSelection: Hashable {
-    case allMeetings, needsLinking, processing
+    case allMeetings
     case meeting(String)
 }
