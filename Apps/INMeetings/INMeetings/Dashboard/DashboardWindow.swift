@@ -27,17 +27,17 @@ struct DashboardWindow: View {
         NavigationSplitView {
             DashboardSidebar(selection: $storeModel.selection)
                 .navigationSplitViewColumnWidth(min: 200, ideal: 230, max: 320)
+                .searchable(text: $storeModel.search, placement: .sidebar, prompt: "Search meetings")
         } detail: {
             content
-                .searchable(text: $storeModel.search, placement: .toolbar, prompt: "Search meetings")
-        }
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button { showCalendar.toggle() } label: {
-                    Label("Calendar", systemImage: showCalendar ? "sidebar.right" : "calendar")
+                .toolbar {
+                    ToolbarItem(placement: .primaryAction) {
+                        Button { showCalendar.toggle() } label: {
+                            Label("Calendar", systemImage: "calendar")
+                        }
+                        .help(showCalendar ? "Hide calendar" : "Show calendar")
+                    }
                 }
-                .help(showCalendar ? "Hide calendar" : "Show calendar")
-            }
         }
         .inspector(isPresented: $showCalendar) {
             CalendarPanel(drive: drive, model: calendarModel,
