@@ -61,12 +61,12 @@ struct INMeetingsApp: App {
         }
         .menuBarExtraStyle(.menu)
 
-        Window("IN Meetings", id: "dashboard") {
+        Window("INV Meetings", id: "dashboard") {
             DashboardWindow(drive: drive, jobBridge: recorder.jobBridge)
         }
         .windowResizability(.contentSize)
 
-        Window("Set up IN Meetings", id: "onboarding") {
+        Window("Set up INV Meetings", id: "onboarding") {
             OnboardingWindow(model: onboarding)
         }
         .windowResizability(.contentSize)
@@ -96,7 +96,7 @@ private struct MenuContent: View {
             openWindow(id: "dashboard")
         }
         .keyboardShortcut("d")
-        Button("Set up IN Meetings…") {
+        Button("Set up INV Meetings…") {
             onboarding.restart()
             NSApp.activate(ignoringOtherApps: true)
             openWindow(id: "onboarding")
@@ -180,7 +180,7 @@ private struct MenuContent: View {
 
         Text("core v\(INMeetingsCore.version)")
 
-        Button("Quit IN Meetings") {
+        Button("Quit INV Meetings") {
             NSApplication.shared.terminate(nil)
         }
         .keyboardShortcut("q")
