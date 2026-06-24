@@ -25,6 +25,9 @@ struct INMeetingsApp: App {
     @State private var endCoordinator: MeetingEndCoordinator
     @State private var drive: DriveAuth
     @State private var onboarding: OnboardingModel
+    @State private var recipeSettings: SummaryRecipeSettings
+    /// Bundled + user recipe registry; rebuilt from the app bundle's `skills/` folder reference.
+    @State private var recipeRegistry: SummaryRecipeRegistry
 
     init() {
         let detector = CallDetector()
@@ -53,6 +56,13 @@ struct INMeetingsApp: App {
         let drive = DriveAuth()
         _drive = State(initialValue: drive)
         _onboarding = State(initialValue: OnboardingModel(drive: drive, models: models))
+        _recipeSettings = State(initialValue: SummaryRecipeSettings())
+        // Build the recipe registry from the bundled `skills/` folder. On first run (before the
+        // xcodeproj is generated), `bundledRecipesRootURL()` may return nil; fall back to an empty
+        // temp root so the Settings UI still renders without crashing.
+        let bundledRoot = JobBridge.bundledRecipesRootURL()
+            ?? URL(filePath: NSTemporaryDirectory()).appendingPathComponent("skills-empty-\(UUID().uuidString)")
+        _recipeRegistry = State(initialValue: SummaryRecipeRegistry(bundledRoot: bundledRoot))
     }
 
     var body: some Scene {
@@ -78,7 +88,8 @@ struct INMeetingsApp: App {
 
         Settings {
             AppSettingsView(settings: promptSettings, models: models, vadModels: vadModel,
-                            drive: drive, capture: captureSettings, audio: audioDeviceSettings)
+                            drive: drive, capture: captureSettings, audio: audioDeviceSettings,
+                            recipeSettings: recipeSettings, recipeRegistry: recipeRegistry)
         }
     }
 }

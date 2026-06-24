@@ -45,15 +45,6 @@ struct RecordingSettingsTab: View {
                     .foregroundStyle(.secondary)
             }
 
-            VStack(alignment: .leading, spacing: 8) {
-                Toggle("Auto-summarize finished calls", isOn: Binding(
-                    get: { capture.autoSummary },
-                    set: { capture.autoSummary = $0 }))
-                Text("When a call finishes, INV Meetings asks Claude to write a short Saventa-style deal summary — shown on the meeting and synced to Drive. Runs locally via the Claude Code CLI (requires `claude` installed and signed in). Off → summarize manually from a meeting.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
             if settings.isSnoozed {
                 HStack(spacing: 8) {
                     Image(systemName: "bell.slash")

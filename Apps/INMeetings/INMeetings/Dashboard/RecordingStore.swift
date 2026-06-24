@@ -54,11 +54,15 @@ final class RecordingStore {
         }
     }
 
-    /// Generate (or re-generate) the saventa-summary for a meeting — the dashboard's manual Summarize /
-    /// Retry. Routed through the recorder's `JobBridge` so it shares the one `SummaryRunner`. The runner
+    /// Generate (or re-generate) the meeting summary — the dashboard's manual Summarize / Retry.
+    /// Routed through the recorder's `JobBridge` so it shares the one `SummaryRunner`. The runner
     /// updates the index + posts `.summaryDidFinish`, which reloads this store.
-    func summarize(_ meeting: MeetingRecord) {
-        jobBridge?.summarize(meetingID: meeting.id, folder: URL(fileURLWithPath: meeting.folderPath))
+    ///
+    /// - Parameter recipeID: When non-nil, use this recipe instead of the user's active-recipe preference
+    ///   (per-meeting override, A2 stretch goal).
+    func summarize(_ meeting: MeetingRecord, recipeID: String? = nil) {
+        jobBridge?.summarize(meetingID: meeting.id, folder: URL(fileURLWithPath: meeting.folderPath),
+                             recipeID: recipeID)
     }
     /// The generated summary text (`summary.md`) for a meeting, if it exists.
     func summaryText(for meeting: MeetingRecord) -> String? {

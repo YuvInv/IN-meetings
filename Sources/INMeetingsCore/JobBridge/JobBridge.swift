@@ -34,14 +34,30 @@ public final class JobBridge {
     /// Phase-2 calendar context (ADR-004): fetched before spawn so the assembler has its input. No-op
     /// until the user connects a Google account (the same credential as Drive).
     @ObservationIgnored private lazy var calendarContext: CalendarContext? = CalendarContext()
-    /// Saventa-summary auto-trigger (ADR-008, amended): runs the app-bundled recipe via headless `claude -p`
-    /// after a finished call, writing summary.md + syncing it to Drive. nil when the recipe isn't bundled
-    /// (e.g. unit tests) → auto-summary no-ops. Shares the store; re-uploads summary.md via `driveBackup`.
+    /// Recipe registry for bundled + user-supplied summary recipes (A2). Built lazily from the bundled
+    /// `skills/` root; nil when the skills dir isn't present (e.g. unit tests) → auto-summary no-ops.
+    @ObservationIgnored private lazy var recipeRegistry: SummaryRecipeRegistry? = {
+        guard let root = Self.bundledRecipesRootURL() else { return nil }
+        return SummaryRecipeRegistry(bundledRoot: root)
+    }()
+
+    /// Summary auto-trigger (ADR-008, amended, A2): runs the user's active recipe via headless `claude -p`
+    /// after a finished call, writing summary.md + syncing it to Drive. nil when the recipe root isn't
+    /// bundled (e.g. unit tests) → auto-summary no-ops. Shares the store; re-uploads summary.md via
+    /// `driveBackup`. The active recipe is resolved at run time by reading UserDefaults off the main actor
+    /// so the `@Sendable` closure stays Sendable-correct (no `@MainActor` capture). Falls back to the
+    /// saventa-summary dir so a reset/unset preference still works.
     @ObservationIgnored private lazy var summaryRunner: SummaryRunner? = {
         guard let store, let resources = Self.bundledSummaryResourcesURL() else { return nil }
         let backup = driveBackup
+        let registry = recipeRegistry
         return SummaryRunner(
             store: store, resourcesURL: resources,
+            resolveResourcesURL: registry.map { reg in {
+                @Sendable () -> URL in
+                let id = SummaryRecipeSettings.activeRecipeID(.standard)
+                return reg.active(id: id)?.resourcesURL ?? resources
+            }},
             syncSummary: backup.map { b in
                 { @Sendable (id: String, folder: URL) in
                     await b.syncSummaryIfConfigured(meetingID: id, packageFolder: folder)
@@ -80,6 +96,17 @@ public final class JobBridge {
         if let res = Bundle.main.resourceURL {
             let dir = res.appendingPathComponent("skills/saventa-summary")
             if FileManager.default.fileExists(atPath: dir.appendingPathComponent("recipe.md").path) { return dir }
+        }
+        return nil
+    }
+
+    /// The bundled `skills/` root containing all bundled recipes (immediate subdirs with `recipe.md`).
+    /// nil when not bundled (e.g. unit tests). Used to build the `SummaryRecipeRegistry`.
+    public nonisolated static func bundledRecipesRootURL() -> URL? {
+        // Prefer a resource-path lookup so it works in both Debug and Release layouts.
+        if let res = Bundle.main.resourceURL {
+            let dir = res.appendingPathComponent("skills")
+            if FileManager.default.fileExists(atPath: dir.path) { return dir }
         }
         return nil
     }
@@ -289,13 +316,18 @@ public final class JobBridge {
         }
     }
 
-    /// Kick the saventa-summary run for a meeting — the dashboard's manual **Summarize** / **Retry** button
+    /// Kick the summary run for a meeting — the dashboard's manual **Summarize** / **Retry** button
     /// (the auto path above runs the same `SummaryRunner`, so runs stay serialized). Non-blocking; a no-op
     /// if the recipe isn't bundled. The runner updates the index, posts `.summaryDidFinish`, and re-uploads
     /// summary.md to Drive on success.
-    public func summarize(meetingID: String, folder: URL) {
+    ///
+    /// - Parameter recipeID: When non-nil, use this recipe instead of the user's active-recipe preference
+    ///   (per-meeting override, A2 stretch goal). Resolved via the registry; falls back to the default
+    ///   when the id is unknown.
+    public func summarize(meetingID: String, folder: URL, recipeID: String? = nil) {
         guard let summaryRunner else { return }
-        Task { await summaryRunner.run(meetingID: meetingID, folder: folder) }
+        let override: SummaryRecipe? = recipeID.flatMap { recipeRegistry?.recipe(id: $0) }
+        Task { await summaryRunner.run(meetingID: meetingID, folder: folder, recipeOverride: override) }
     }
 
     /// Record a pipeline failure in the index (reliability pass) so the dashboard can show it instead of

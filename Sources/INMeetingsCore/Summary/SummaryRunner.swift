@@ -3,10 +3,14 @@ import os
 
 private let summaryLog = Logger(subsystem: "com.in-venture.in-meetings", category: "summary")
 
-/// Runs IN Venture's bundled `saventa-summary` recipe over a finished meeting package via headless
-/// `claude -p`, writing `<folder>/summary.md` (ADR-008, amended: an app-bundled recipe, **not** a
-/// globally-installed skill). Mirrors `JobBridge`: spawn a subprocess with an explicit GUI-safe PATH,
-/// capture its log, update the index, hand off the Drive re-upload, and post `.summaryDidFinish`.
+/// Runs a bundled or user-supplied recipe over a finished meeting package via headless `claude -p`,
+/// writing `<folder>/summary.md` (ADR-008, amended). The active recipe is resolved per-run via an
+/// optional `resolveResourcesURL` closure (A2: reads the user's active-recipe preference off the main
+/// actor from `UserDefaults`) or a per-call `recipeOverride` (A2: per-meeting override). Falls back
+/// to the init-time `resourcesURL` (the bundled `saventa-summary` dir) when neither is provided.
+///
+/// Mirrors `JobBridge`: spawn a subprocess with an explicit GUI-safe PATH, capture its log, update
+/// the index, hand off the Drive re-upload, and post `.summaryDidFinish`.
 ///
 /// CRM posting is OUT — the summary is a **file only**, so the run takes no external action, needs no
 /// review gate, and is safe to auto-trigger. Best-effort + non-throwing: every failure lands as
@@ -20,8 +24,13 @@ public final class SummaryRunner: @unchecked Sendable {
     }
 
     private let store: MeetingStore
-    /// Directory holding `recipe.md` + `house-style/*.md` (the app bundle's `skills/saventa-summary`).
+    /// Fallback directory holding `recipe.md` + `house-style/*.md`. Used when neither
+    /// `resolveResourcesURL` nor a per-run `recipeOverride` is provided.
     private let resourcesURL: URL
+    /// Optional resolver called per-run to pick the active recipe dir. Typically reads
+    /// `SummaryRecipeSettings.activeRecipeID(.standard)` from UserDefaults (off the main actor) and
+    /// maps it via a `SummaryRecipeRegistry`. When nil, `resourcesURL` is used as the fallback.
+    private let resolveResourcesURL: (@Sendable () -> URL)?
     /// Explicit `claude` path; nil → resolve it on a GUI-safe PATH at run time.
     private let claudeURL: URL?
     /// Re-upload `summary.md` to Drive after a successful run (the app wires this to `DriveBackup`). The
@@ -38,10 +47,12 @@ public final class SummaryRunner: @unchecked Sendable {
     public init(store: MeetingStore,
                 resourcesURL: URL,
                 claudeURL: URL? = nil,
+                resolveResourcesURL: (@Sendable () -> URL)? = nil,
                 syncSummary: (@Sendable (String, URL) async -> Void)? = nil,
                 runProcessOverride: (@Sendable ([String], URL, URL) async -> ProcessOutcome)? = nil) {
         self.store = store
         self.resourcesURL = resourcesURL
+        self.resolveResourcesURL = resolveResourcesURL
         self.claudeURL = claudeURL
         self.syncSummary = syncSummary
         self.runProcessOverride = runProcessOverride
@@ -51,7 +62,11 @@ public final class SummaryRunner: @unchecked Sendable {
 
     /// Generate `summary.md` for a finished meeting. Safe to call on any thread; posts `.summaryDidFinish`
     /// on each state change so the dashboard reloads. A no-op if this meeting is already being summarized.
-    public func run(meetingID: String, folder: URL) async {
+    ///
+    /// - Parameters:
+    ///   - recipeOverride: When non-nil, use this recipe's `resourcesURL` instead of the registry
+    ///     resolver or the init-time fallback (per-meeting override, A2 stretch goal).
+    public func run(meetingID: String, folder: URL, recipeOverride: SummaryRecipe? = nil) async {
         guard claimInFlight(meetingID) else { return }
         defer { releaseInFlight(meetingID) }
 
@@ -64,8 +79,11 @@ public final class SummaryRunner: @unchecked Sendable {
             return
         }
 
+        // Effective recipe dir: per-run override → active-recipe resolver → init-time fallback.
+        let effectiveResourcesURL = recipeOverride?.resourcesURL ?? resolveResourcesURL?() ?? resourcesURL
+
         let systemPrompt: String
-        do { systemPrompt = try Self.assembleSystemPrompt(resourcesURL: resourcesURL) }
+        do { systemPrompt = try Self.assembleSystemPrompt(resourcesURL: effectiveResourcesURL) }
         catch {
             finishFailed(meetingID, "Couldn't load the bundled summary recipe: \(error.localizedDescription)")
             return
@@ -123,9 +141,11 @@ public final class SummaryRunner: @unchecked Sendable {
     /// `recipe.md` + every `house-style/*.md`, concatenated with clear separators — the system prompt fed
     /// to `claude -p` via `--append-system-prompt` (we inline the house style rather than have Claude read
     /// files, so the recipe is self-contained and there's no skill install).
+    ///
+    /// The header is recipe-agnostic (decision 3 of A2): the recipe.md itself defines the kind of summary.
     static func assembleSystemPrompt(resourcesURL: URL) throws -> String {
         let recipe = try String(contentsOf: resourcesURL.appendingPathComponent("recipe.md"), encoding: .utf8)
-        var parts = ["# IN Venture — Saventa summary recipe\n\n\(recipe)"]
+        var parts = ["# IN Venture — meeting summary recipe\n\n\(recipe)"]
         let houseStyleDir = resourcesURL.appendingPathComponent("house-style")
         let files = (try? FileManager.default.contentsOfDirectory(at: houseStyleDir, includingPropertiesForKeys: nil))?
             .filter { $0.pathExtension == "md" }
@@ -142,7 +162,7 @@ public final class SummaryRunner: @unchecked Sendable {
         [
             "-p",
             "Read the meeting context package in this folder (\(folder.path)) — transcript.json / transcript.txt "
-                + "and metadata.json — and write IN Venture's Saventa deal summary to summary.md in that same "
+                + "and metadata.json — and write the meeting summary to summary.md in that same "
                 + "folder, following the recipe exactly. Do not do anything else.",
             "--append-system-prompt", systemPrompt,
             "--permission-mode", "acceptEdits",
