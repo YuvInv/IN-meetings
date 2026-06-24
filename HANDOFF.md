@@ -63,6 +63,12 @@ manual-tests `docs/manual-tests-modular-layout.md`; DECISIONS 2026-06-23. ⏳ **
 meeting, drag both dividers, toggle summary, relaunch for persistence; **known nit** — summary-toggle on an
 audio meeting may reset the transcript scroll (deferred until we see if it's noticeable).
 
+**IN PROGRESS (2026-06-24, branch `chore/rename-inv-meetings`):** product rename **"IN Meetings" → "INV
+Meetings"** — **brand strings only** (window titles, buttons, onboarding/error/usage copy, `CFBundleDisplayName`).
+On-disk cache `IN Meetings/`, the Drive `IN Meetings` folder, the bundle id, and code identifiers/`IN_MEETINGS_*`
+env are **deliberately unchanged** (no migration / no TCC-OAuth re-grant — Yuval's call). 17 strings, 6 files,
+both builds green; `CFBundleDisplayName` confirmed `INV Meetings`.
+
 **NEXT — START HERE:** the remaining v1 gaps below — the **Ship** phase (gated on the $99 Apple Developer
 account) and a **global cache-size cap**. No designed-but-unbuilt feature is queued.
 
@@ -71,9 +77,12 @@ account) and a **global cache-size cap**. No designed-but-unbuilt feature is que
 **`make dmg`** exists for local unsigned install testing); a **global cache-size cap**. The in-app "AI overview"
 panel stays out of v1.
 
-**Live-test debt (needs Yuval at the GUI on a real call):** **auto-stop** (#13 — countdown + cancel paths,
-`docs/manual-tests-auto-stop.md`); **saventa-summary** panel + full flow (#12,
-`docs/manual-tests-saventa-summary.md`); partial-silence VAD + multi-party (3+) diarization.
+**✅ Live-verification DONE (Yuval, 2026-06-24).** The merged v1 features — auto-stop (#13), the
+auto-summary panel + flow (#12), calendar-anchored import (#17), modular layout (#18), VAD + multi-party
+diarization — are live-verified and accepted. Do **not** re-list these as outstanding test debt.
+
+**Note (scope):** this project has **NO Saventa/CRM connection** — the auto-summary writes `summary.md`
+only. Do not surface CRM posting as a feature or task.
 
 ## Gotchas (verified)
 - **The Google Calendar API must be enabled in the OAuth client's GCP project (1062382667236).** Enabled
