@@ -12,7 +12,13 @@ import Observation
 public final class JobBridge {
     /// queued | transcribing | diarizing | packaging | done | failed  (nil = no job yet)
     public private(set) var phase: String?
+    /// 0–1 progress fraction emitted by status.json (nil = no job yet / phase has no granular progress).
+    public private(set) var progress: Double?
     public private(set) var lastError: String?
+    /// The meeting id (`folder.lastPathComponent`) of the job currently being processed. Cleared when the
+    /// job reaches a terminal phase. Used by `QueueModel` to attach live phase/progress to the right row
+    /// while other `"processing"` rows render as "Queued" (decision 2, A3).
+    public private(set) var activeMeetingID: String?
 
     private let pipelineDir: URL
     private let python: URL
@@ -137,7 +143,7 @@ public final class JobBridge {
         let statusURL = dir.appendingPathComponent("status.json")
         _ = try? store?.markProcessing(folder: dir)   // show the meeting (with a spinner) immediately
         notifyDashboard()
-        if !isRunning { lastError = nil; phase = "queued" }   // immediate feedback when idle; don't clobber a running job
+        if !isRunning { lastError = nil; phase = "queued"; progress = nil }   // immediate feedback when idle; don't clobber a running job
         // Fetch calendar context (best-effort, short timeout) *before* spawning so the assembler has its
         // context.input.json; then start (or queue) the pipeline. A no-op when no Google account is connected.
         Task { @MainActor in
@@ -167,7 +173,7 @@ public final class JobBridge {
         let statusURL = directory.appendingPathComponent("status.json")
         _ = try? store?.markProcessing(folder: directory)   // show the imported meeting (with a spinner) immediately
         notifyDashboard()
-        if !isRunning { lastError = nil; phase = "queued" }
+        if !isRunning { lastError = nil; phase = "queued"; progress = nil }
         beginOrQueue { [weak self] in self?.spawn(jobURL: jobURL, statusURL: statusURL) }
     }
 
@@ -256,6 +262,8 @@ public final class JobBridge {
         isRunning = true
         lastError = nil
         phase = "queued"
+        progress = nil
+        activeMeetingID = jobURL.deletingLastPathComponent().lastPathComponent
         captureLog.notice("jobbridge.spawned meeting=\(jobURL.deletingLastPathComponent().lastPathComponent, privacy: .public)")
         watchStatus(statusURL)
     }
@@ -269,6 +277,7 @@ public final class JobBridge {
                       let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                       let phase = obj["phase"] as? String else { return }
                 self.phase = phase
+                self.progress = obj["progress"] as? Double
                 if phase == "done" || phase == "failed" {
                     let folder = statusURL.deletingLastPathComponent()
                     if phase == "failed" {
@@ -282,6 +291,8 @@ public final class JobBridge {
                     captureLog.notice("jobbridge.finished phase=\(phase, privacy: .public)")
                     timer.invalidate()
                     self.isRunning = false
+                    self.activeMeetingID = nil
+                    self.progress = nil
                     self.startNextIfQueued()
                 }
             }
@@ -328,6 +339,22 @@ public final class JobBridge {
         guard let summaryRunner else { return }
         let override: SummaryRecipe? = recipeID.flatMap { recipeRegistry?.recipe(id: $0) }
         Task { await summaryRunner.run(meetingID: meetingID, folder: folder, recipeOverride: override) }
+    }
+
+    /// Re-run the pipeline for a previously-failed job. `job.json` + `status.json` are already on disk;
+    /// we reset the status and re-queue the spawn via the existing serialised `beginOrQueue` path (A3,
+    /// decision 4). Call this from the Queue view's "Retry" button on a `.failed` meeting.
+    public func retry(folder: URL) {
+        let jobURL = folder.appendingPathComponent("job.json")
+        let statusURL = folder.appendingPathComponent("status.json")
+        guard FileManager.default.fileExists(atPath: jobURL.path) else {
+            lastError = "Cannot retry: job.json not found in \(folder.lastPathComponent)"
+            return
+        }
+        _ = try? store?.markProcessing(folder: folder)
+        notifyDashboard()
+        if !isRunning { lastError = nil; phase = "queued" }
+        beginOrQueue { [weak self] in self?.spawn(jobURL: jobURL, statusURL: statusURL) }
     }
 
     /// Record a pipeline failure in the index (reliability pass) so the dashboard can show it instead of

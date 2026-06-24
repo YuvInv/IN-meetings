@@ -144,5 +144,6 @@ final class RecordingStore {
 
 enum DashboardSelection: Hashable {
     case allMeetings
+    case queue
     case meeting(String)
 }
