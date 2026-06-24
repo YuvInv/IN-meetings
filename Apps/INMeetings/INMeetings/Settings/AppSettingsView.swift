@@ -12,6 +12,8 @@ struct AppSettingsView: View {
     var audio: AudioDeviceSettings
     var recipeSettings: SummaryRecipeSettings
     var recipeRegistry: SummaryRecipeRegistry
+    var dictation: DictationSettings
+    var dictationController: DictationController
     var body: some View {
         TabView {
             GeneralSettingsTab(launchAtLogin: launchAtLogin)
@@ -19,6 +21,8 @@ struct AppSettingsView: View {
             RecordingSettingsTab(settings: settings, capture: capture)
                 .tabItem { Label("Recording", systemImage: "phone") }
             AudioSettingsTab(audio: audio).tabItem { Label("Audio", systemImage: "mic") }
+            DictationSettingsTab(settings: dictation, controller: dictationController)
+                .tabItem { Label("Dictation", systemImage: "text.cursor") }
             SummarySettingsTab(recipeSettings: recipeSettings, capture: capture, registry: recipeRegistry)
                 .tabItem { Label("Summary", systemImage: "text.append") }
             ModelSettingsTab(model: models, vad: vadModels).tabItem { Label("Model", systemImage: "cube.box") }

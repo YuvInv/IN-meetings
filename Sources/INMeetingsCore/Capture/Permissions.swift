@@ -1,5 +1,6 @@
 import AVFoundation
 import AppKit
+import ApplicationServices
 import CoreGraphics
 
 /// TCC helpers for the capture grants the app needs: Microphone and Screen Recording.
@@ -39,6 +40,18 @@ public enum Permissions {
     /// Open System Settings ▸ Privacy & Security ▸ Screen Recording (for the onboarding/settings nudge).
     public static func openScreenRecordingSettings() {
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
+    /// Whether the app holds the **Accessibility** grant (no prompt). Needed by dictation to synthesize the
+    /// ⌘V paste keystroke (A6, decision 3) — handled contextually in the dictation feature, NOT in the
+    /// onboarding usable-floor (which stays mic + Google).
+    public static func isAccessibilityTrusted() -> Bool { AXIsProcessTrusted() }
+
+    /// Open System Settings ▸ Privacy & Security ▸ Accessibility (the dictation nudge when paste can't fire).
+    public static func openAccessibilitySettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
             NSWorkspace.shared.open(url)
         }
     }
