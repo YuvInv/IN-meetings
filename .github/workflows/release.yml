@@ -1,0 +1,199 @@
+# .github/workflows/release.yml
+#
+# Builds and publishes an unsigned .dmg to GitHub Releases on every `v*` tag.
+# Account-gated steps (signing, notarization, Sparkle appcast) are present but
+# inert without secrets — the unsigned path succeeds regardless.
+#
+# Trigger: push a version tag (e.g. `git tag v0.1.0 && git push origin v0.1.0`)
+#          or manually via Actions → "Release" → "Run workflow".
+#
+# Secrets used (all optional — unsigned path works without them):
+#   DEVELOPER_ID_CERT        Base64-encoded .p12 Developer ID Application cert  [account-gated]
+#   DEVELOPER_ID_CERT_PW     Password for the .p12                               [account-gated]
+#   AC_API_KEY               App Store Connect API key (.p8 contents)            [account-gated]
+#   AC_API_KEY_ID            App Store Connect Key ID                            [account-gated]
+#   AC_API_KEY_ISSUER        App Store Connect Issuer ID                         [account-gated]
+#   SPARKLE_ED_PRIVATE_KEY   EdDSA private key from `generate_keys` (Sparkle 2) [account-gated]
+
+name: Release
+
+'on':
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build-and-release:
+    name: Build & publish
+    runs-on: macos-14
+
+    permissions:
+      contents: write   # create GitHub Releases
+      pages: write      # TODO(account): publish appcast to gh-pages
+      id-token: write   # TODO(account): OIDC for notarization
+
+    # Expose secrets as env vars so we can check them in step `if:` conditions.
+    # (The `secrets` context is not available directly in step-level `if:`.)
+    env:
+      HAS_CERT:    ${{ secrets.DEVELOPER_ID_CERT != '' && 'true' || '' }}
+      HAS_SPARKLE: ${{ secrets.SPARKLE_ED_PRIVATE_KEY != '' && 'true' || '' }}
+
+    steps:
+      # ── 1. Checkout ──────────────────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # ── 2. Install XcodeGen ──────────────────────────────────────────────────
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      # ── 3. Generate .xcodeproj ───────────────────────────────────────────────
+      - name: Generate project (make gen)
+        run: make gen
+
+      # ── 4. Build Release .dmg (unsigned) ────────────────────────────────────
+      # `make dmg` runs `make gen` then xcodebuild Release then
+      # scripts/make-dmg.sh → dist/INMeetings.dmg
+      - name: Build unsigned .dmg (make dmg)
+        run: make dmg
+
+      # ── 5. Verify artifact exists ────────────────────────────────────────────
+      - name: Verify dist/INMeetings.dmg
+        run: |
+          ls -lh dist/INMeetings.dmg
+          echo "dmg_size=$(du -h dist/INMeetings.dmg | cut -f1)" >> "$GITHUB_ENV"
+
+      # ════════════════════════════════════════════════════════════════════════
+      # ACCOUNT-GATED: signing + notarization
+      # Steps 6–9 are skipped entirely until DEVELOPER_ID_CERT is set.
+      # They produce dist/INMeetings-signed.dmg (signed + notarized + stapled)
+      # alongside the unsigned dmg. When active, the GitHub Release upload (step
+      # 10) will also attach the signed artifact.
+      # ════════════════════════════════════════════════════════════════════════
+
+      # TODO(account): import Developer ID cert into the runner's keychain
+      - name: "[account-gated] Import Developer ID cert"
+        if: env.HAS_CERT == 'true'
+        env:
+          CERT_B64: ${{ secrets.DEVELOPER_ID_CERT }}
+          CERT_PW:  ${{ secrets.DEVELOPER_ID_CERT_PW }}
+        run: |
+          echo "$CERT_B64" | base64 --decode > /tmp/dev-id.p12
+          security create-keychain -p "" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "" build.keychain
+          security import /tmp/dev-id.p12 -k build.keychain \
+            -P "$CERT_PW" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: \
+            -s -k "" build.keychain
+          rm /tmp/dev-id.p12
+
+      # TODO(account): sign the .app with Hardened Runtime (never --deep)
+      # Entitlements file lives at Apps/INMeetings/entitlements.plist
+      - name: "[account-gated] Sign .app (Developer ID + Hardened Runtime)"
+        if: env.HAS_CERT == 'true'
+        run: |
+          APP_PATH="DerivedData/Build/Products/Release/INMeetings.app"
+          # Sign frameworks/dylibs first, then the bundle (order matters — never --deep)
+          find "$APP_PATH/Contents/Frameworks" \( -name "*.framework" -o -name "*.dylib" \) \
+            -print0 | xargs -0 -I{} \
+              codesign --force --options runtime --sign "Developer ID Application" {}
+          codesign --force --options runtime \
+            --entitlements "Apps/INMeetings/entitlements.plist" \
+            --sign "Developer ID Application" \
+            "$APP_PATH"
+          codesign --verify --deep --strict "$APP_PATH"
+
+      # TODO(account): notarize + staple
+      - name: "[account-gated] Notarize + staple"
+        if: env.HAS_CERT == 'true'
+        env:
+          AC_API_KEY: ${{ secrets.AC_API_KEY }}
+          AC_KEY_ID:  ${{ secrets.AC_API_KEY_ID }}
+          AC_ISSUER:  ${{ secrets.AC_API_KEY_ISSUER }}
+        run: |
+          APP_PATH="DerivedData/Build/Products/Release/INMeetings.app"
+          # Zip the .app for notarytool (staple back to the .app, not the zip)
+          ditto -c -k --keepParent "$APP_PATH" /tmp/INMeetings-notarize.zip
+          xcrun notarytool submit /tmp/INMeetings-notarize.zip \
+            --key <(echo "$AC_API_KEY") \
+            --key-id "$AC_KEY_ID" \
+            --issuer "$AC_ISSUER" \
+            --wait
+          xcrun stapler staple "$APP_PATH"
+          # Repackage as a signed+notarized .dmg
+          bash scripts/make-dmg.sh "$APP_PATH"
+          mv dist/INMeetings.dmg dist/INMeetings-signed.dmg
+
+      # TODO(account): produce .zip for Sparkle (Sparkle downloads a .zip, not a .dmg)
+      - name: "[account-gated] Package .zip for Sparkle"
+        if: env.HAS_CERT == 'true'
+        run: |
+          APP_PATH="DerivedData/Build/Products/Release/INMeetings.app"
+          ditto -c -k --keepParent "$APP_PATH" dist/INMeetings.zip
+
+      # TODO(account): generate Sparkle appcast.xml and push to gh-pages
+      # Requires: Sparkle's generate_appcast binary and SPARKLE_ED_PRIVATE_KEY secret.
+      - name: "[account-gated] Generate Sparkle appcast + publish to gh-pages"
+        if: env.HAS_SPARKLE == 'true'
+        env:
+          SPARKLE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          # Download Sparkle CLI tools (adjust version as needed)
+          SPARKLE_VERSION="2.7.4"
+          curl -sL \
+            "https://github.com/sparkle-project/Sparkle/releases/download/${SPARKLE_VERSION}/Sparkle-${SPARKLE_VERSION}.tar.xz" \
+            | tar -xJ Sparkle/bin/generate_appcast
+          # generate_appcast reads the EdDSA key from the environment
+          echo "$SPARKLE_KEY" | \
+            ./Sparkle/bin/generate_appcast dist/ \
+              --ed-key-file /dev/stdin \
+              --download-url-prefix \
+                "https://github.com/${{ github.repository }}/releases/download/${RELEASE_TAG}/" \
+              --link "https://${{ github.repository_owner }}.github.io/IN-meetings/appcast.xml"
+          # Push appcast.xml to gh-pages
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin gh-pages 2>/dev/null || git checkout --orphan gh-pages
+          git checkout gh-pages
+          cp dist/appcast.xml appcast.xml
+          git add appcast.xml
+          git commit -m "chore(sparkle): update appcast for ${RELEASE_TAG}"
+          git push origin gh-pages
+
+      # ── 10. Publish GitHub Release ───────────────────────────────────────────
+      # Always runs (unsigned path). If the account-gated steps ran, also attaches
+      # the signed .dmg and .zip.
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "INV Meetings ${{ github.ref_name }} (unsigned internal build)"
+          prerelease: true
+          body: |
+            ## INV Meetings ${{ github.ref_name }}
+
+            > **Unsigned internal build** — Gatekeeper will block direct double-click
+            > on Macs that didn't build this. To open: right-click → Open, or:
+            > ```
+            > xattr -dr com.apple.quarantine /Applications/INMeetings.app
+            > ```
+            > A signed + notarized build (no Gatekeeper prompt) requires the Apple
+            > Developer account ($99/yr) — see `docs/distribution-setup.md`.
+
+            ### Install
+            1. Download `INMeetings.dmg`
+            2. Open, drag **INV Meetings** to **Applications**
+            3. Launch from `/Applications` (right-click → Open on first run)
+
+            ### What's included
+            - `INMeetings.dmg` — unsigned drag-to-install image (${{ env.dmg_size }})
+          files: |
+            dist/INMeetings.dmg
+            dist/INMeetings-signed.dmg
+            dist/INMeetings.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

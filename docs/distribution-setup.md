@@ -107,3 +107,91 @@ branded and have the D‑U‑N‑S ready.
 ---
 **Net:** ~$99 + one form. Individual ≈ same-day unblock; Organization ≈ a few days but "IN Venture"-branded.
 When you've enrolled, ping Claude and we do Steps 3–4 together.
+
+---
+
+## Release hosting + auto-update (the chosen architecture)
+
+> Added 2026-06-24. Implements the "plan now, account later" decision: the unsigned
+> release path is live-ready TODAY (no Apple account); signed + Sparkle auto-update
+> activates when the $99 Developer account lands.
+
+### Architecture
+
+| Concern | Tool | Notes |
+|---|---|---|
+| Binary hosting | **GitHub Releases** | one `.dmg` (unsigned now, signed+notarized later) per tag |
+| Auto-update feed | **GitHub Pages** (`gh-pages` branch) | serves `appcast.xml` |
+| Auto-update client | **Sparkle 2** (EdDSA) | `SPUStandardUpdaterController` in-app |
+| Signatures | EdDSA via `generate_appcast` | keys generated once with `generate_keys` |
+
+### The `release.yml` workflow (`.github/workflows/release.yml`)
+
+Triggers on `push: tags: v*` **or** `workflow_dispatch`.
+
+**NOW (no account needed):**
+1. `brew install xcodegen` → `make gen`
+2. `make dmg` → `dist/INMeetings.dmg` (unsigned Release build)
+3. `softprops/action-gh-release@v2` publishes a pre-release tagged "unsigned internal build"
+4. Artifact: `INMeetings.dmg`
+
+**LATER (account-gated — activate by adding secrets):**
+
+Each account-gated step is wrapped in `if: ${{ secrets.DEVELOPER_ID_CERT != '' }}` (or
+`SPARKLE_ED_PRIVATE_KEY`). The unsigned path succeeds regardless. Steps that activate:
+1. Import Developer ID cert into runner keychain
+2. `codesign --options runtime` (Hardened Runtime; sign frameworks first, then the bundle — never `--deep`)
+3. `notarytool submit --wait` → `stapler staple`
+4. Repackage as `INMeetings-signed.dmg` + produce `INMeetings.zip` (Sparkle's download artifact)
+5. `generate_appcast` (EdDSA) → `dist/appcast.xml` → push to `gh-pages` branch
+
+### Now vs Later split at a glance
+
+| Step | Now (no account) | Later (account + secrets) |
+|---|---|---|
+| Build | ✅ `make dmg` | same |
+| Sign | ❌ unsigned | ✅ Developer ID + Hardened Runtime |
+| Notarize | ❌ | ✅ `notarytool submit --wait` + `stapler staple` |
+| GitHub Release | ✅ unsigned `.dmg` | ✅ also signed `.dmg` + `.zip` |
+| Auto-update | ❌ | ✅ Sparkle 2 appcast via `gh-pages` |
+| Gatekeeper | right-click → Open | transparent |
+
+### What to flip when the account lands
+
+**In the app (project.yml / Info.plist):**
+- Add Sparkle 2 as an SPM dependency (`https://github.com/sparkle-project/Sparkle`, `2.x`).
+- Run `generate_keys` (Sparkle CLI) once → store the private key as secret `SPARKLE_ED_PRIVATE_KEY`
+  → add the public key as `SUPublicEDKey` in `Apps/INMeetings/project.yml` under `info`.
+- Add `SUFeedURL` pointing at `https://<org>.github.io/IN-meetings/appcast.xml`.
+- Wire `SPUStandardUpdaterController` + a "Check for Updates…" menu item.
+- Set `CODE_SIGN_STYLE = Manual`, `CODE_SIGN_IDENTITY = Developer ID Application`,
+  `ENABLE_HARDENED_RUNTIME = YES`, and the `-spks`/`-spki` InstallerLauncher entitlements
+  (needed by Sparkle's installer helper).
+
+**In GitHub Actions (add these secrets):**
+
+| Secret name | What it is |
+|---|---|
+| `DEVELOPER_ID_CERT` | Base64-encoded Developer ID Application `.p12` |
+| `DEVELOPER_ID_CERT_PW` | Password for that `.p12` |
+| `AC_API_KEY` | App Store Connect API key (`.p8` contents) |
+| `AC_API_KEY_ID` | Key ID from App Store Connect |
+| `AC_API_KEY_ISSUER` | Issuer ID from App Store Connect |
+| `SPARKLE_ED_PRIVATE_KEY` | EdDSA private key from `generate_keys` |
+
+**Enable GitHub Pages** (repo Settings → Pages → Source: `gh-pages` branch, `/ (root)`).
+
+### Version-bump rule (per release)
+
+Bump **both** in `Apps/INMeetings/project.yml` before tagging:
+- `MARKETING_VERSION` — the user-visible version shown in Sparkle's dialog (e.g. `0.2.0`)
+- `CURRENT_PROJECT_VERSION` — the build number Sparkle uses to detect updates (integer, increment monotonically)
+
+Then: `git tag v0.2.0 && git push origin v0.2.0` — the workflow fires automatically.
+
+### Appcast template
+
+`docs/appcast.xml` is a committed, **not-yet-served** template showing the correct Sparkle 2 feed
+structure (fields: `sparkle:version` = build number, `sparkle:shortVersionString`, `enclosure` with
+`url` → GitHub Releases `.zip`, `sparkle:edSignature`). `generate_appcast` replaces this automatically
+when the account-gated step runs — do not hand-edit the signature field.
