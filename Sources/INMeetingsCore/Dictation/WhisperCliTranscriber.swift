@@ -118,12 +118,45 @@ public struct WhisperCliTranscriber: DictationController.Transcribing, Sendable 
 
     // MARK: - Spawn (live path; not unit-tested — see the spec's live-verify note)
 
+    /// Hard ceiling on a single `whisper-cli` dictation run. A wedged/looping process would otherwise
+    /// leave the awaiting `Task` (and the dictation FSM) stuck in `.transcribing` forever; on timeout we
+    /// terminate the process so the run finishes as a failure. Dictation clips are short, so 30s is a
+    /// generous bound for a healthy transcribe.
+    static let spawnTimeout: Duration = .seconds(30)
+
     /// Spawn `whisper-cli`, capturing stdout/stderr to a temp file (read after exit — no pipe-buffer
     /// deadlock). Reuses the GUI-safe-PATH approach from `JobBridge`/`SummaryRunner`. Returns the exit
     /// code + the captured stdout (the transcript itself is read from `<base>.txt`, not stdout).
-    static func spawn(executable: URL, args: [String]) async -> ProcessOutcome {
-        await withCheckedContinuation { continuation in
-            let process = Process()
+    ///
+    /// A watchdog terminates the process after `spawnTimeout`; the termination fires the existing
+    /// `terminationHandler`, which is the *single* place that resumes the continuation. A lock-guarded
+    /// "resumed" flag makes the resume happen exactly once even though three paths can reach it
+    /// (normal exit, the `run()` catch, and a watchdog that loses the race) — guaranteeing no
+    /// double-resume (which would crash) and no leak.
+    static func spawn(executable: URL, args: [String], timeout: Duration = spawnTimeout) async -> ProcessOutcome {
+        // Guard so the continuation is resumed exactly once across the termination, catch, and watchdog
+        // paths. The watchdog only ever calls `process.terminate()`, never resumes directly.
+        let resumeLock = NSLock()
+        nonisolated(unsafe) var didResume = false
+        @Sendable func resumeOnce(_ continuation: CheckedContinuation<ProcessOutcome, Never>,
+                                  _ outcome: ProcessOutcome) {
+            resumeLock.lock()
+            let shouldResume = !didResume
+            didResume = true
+            resumeLock.unlock()
+            if shouldResume { continuation.resume(returning: outcome) }
+        }
+
+        let process = Process()
+        // Watchdog: fire-and-forget terminate after `timeout`; cancelled once the process exits.
+        let watchdog = Task {
+            try? await Task.sleep(for: timeout)
+            if Task.isCancelled { return }
+            if process.isRunning { process.terminate() }
+        }
+        defer { watchdog.cancel() }
+
+        return await withCheckedContinuation { continuation in
             process.executableURL = executable
             process.arguments = args
 
@@ -142,16 +175,20 @@ public struct WhisperCliTranscriber: DictationController.Transcribing, Sendable 
             }
 
             process.terminationHandler = { proc in
+                watchdog.cancel()
                 try? outHandle?.close()
                 let stdout = (try? String(contentsOf: outURL, encoding: .utf8)) ?? ""
                 try? FileManager.default.removeItem(at: outURL)
-                continuation.resume(returning: ProcessOutcome(exitCode: proc.terminationStatus, stdout: stdout))
+                // A watchdog-terminated process exits non-zero (signal), so this maps to a failure
+                // outcome via the existing exit-code check in `transcribe`.
+                resumeOnce(continuation, ProcessOutcome(exitCode: proc.terminationStatus, stdout: stdout))
             }
             do { try process.run() }
             catch {
+                watchdog.cancel()
                 try? outHandle?.close()
                 try? FileManager.default.removeItem(at: outURL)
-                continuation.resume(returning: ProcessOutcome(
+                resumeOnce(continuation, ProcessOutcome(
                     exitCode: -1, stdout: "spawn failed: \(error.localizedDescription)"))
             }
         }

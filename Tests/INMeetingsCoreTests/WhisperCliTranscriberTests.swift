@@ -105,4 +105,29 @@ final class WhisperCliTranscriberTests: XCTestCase {
             return XCTFail("expected noOutput, got \(result)")
         }
     }
+
+    // MARK: - Spawn watchdog (real process; not timing-flaky — see notes per case)
+
+    /// A wedged process must not hang the awaiting Task forever. We spawn `sleep 30` but cap the run at
+    /// 50ms; the 600× gap makes "watchdog fires before `sleep` exits" deterministic, not a tight race.
+    /// The terminated process exits via signal (non-zero), and the single resume returns that failure.
+    func testSpawnTimesOutAndTerminatesWedgedProcess() async throws {
+        let outcome = await WhisperCliTranscriber.spawn(
+            executable: URL(fileURLWithPath: "/bin/sleep"),
+            args: ["30"],
+            timeout: .milliseconds(50))
+        // SIGTERM ⇒ non-zero terminationStatus, so `transcribe`'s exit-code check maps this to a failure.
+        XCTAssertNotEqual(outcome.exitCode, 0, "wedged process should be terminated, not exit cleanly")
+    }
+
+    /// The fast, healthy path: a process that exits cleanly well before the (default-large) timeout must
+    /// resume via the normal `terminationHandler` with exit 0 — proving the watchdog is cancelled and
+    /// never terminates a process that finished on its own.
+    func testSpawnReturnsExitZeroForFastProcess() async throws {
+        let outcome = await WhisperCliTranscriber.spawn(
+            executable: URL(fileURLWithPath: "/usr/bin/true"),
+            args: [],
+            timeout: .seconds(30))
+        XCTAssertEqual(outcome.exitCode, 0)
+    }
 }

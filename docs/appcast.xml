@@ -25,7 +25,7 @@
                                   generate_appcast fill it automatically)
 -->
 <rss version="2.0"
-     xmlns:sparkle="http://www.andymaher.com/sparkle/ns2"
+     xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle"
      xmlns:dc="http://purl.org/dc/elements/1.1/">
   <channel>
     <title>INV Meetings</title>
