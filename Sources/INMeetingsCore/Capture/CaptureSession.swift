@@ -48,14 +48,22 @@ public final class CaptureSession {
     /// The call app's bundle id (e.g. "com.google.Chrome") to scope window-only video capture — nil to
     /// record audio only (in-person, video disabled, or no detected app). Only used for the `call` profile.
     private let videoBundleID: String?
+    /// Persistent UID of the input device to record the mic from, or nil for the system default. Already
+    /// resolved against the available devices by the caller (an unplugged device degrades to nil).
+    private let micDeviceUID: String?
+    /// Opt-in auto-leveling for the mic track; nil leaves the raw mic untouched.
+    private let adaptiveGain: AdaptiveGain?
     private var mic: MicRecorder?
     private var systemTap: SystemAudioTap?
     private var callRecorder: ScreenCaptureKitRecorder?
 
-    public init(profile: CaptureProfile, directory: URL, videoBundleID: String? = nil) {
+    public init(profile: CaptureProfile, directory: URL, videoBundleID: String? = nil,
+                micDeviceUID: String? = nil, adaptiveGain: AdaptiveGain? = nil) {
         self.profile = profile
         self.directory = directory
         self.videoBundleID = videoBundleID
+        self.micDeviceUID = micDeviceUID
+        self.adaptiveGain = adaptiveGain
     }
 
     /// Creates the output folder and starts capture. A **video call** runs one ScreenCaptureKit stream
@@ -63,11 +71,15 @@ public final class CaptureSession {
     /// ADR-002); if that can't start it falls back to the audio path. **In-person / call-without-video**
     /// use the audio path: mic via AVAudioEngine (+ system via the Core Audio tap for calls), no Screen
     /// Recording. Audio is critical (rolls back on failure); video is best-effort.
+    ///
+    /// `micDeviceUID` selects the input device on both paths (best-effort on the SCK path); `adaptiveGain`
+    /// applies **only** on the audio path (`MicRecorder`) — a video call records the raw chosen mic.
     public func start() async throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 
         if profile == .call, let videoBundleID {
-            let recorder = ScreenCaptureKitRecorder(directory: directory, bundleID: videoBundleID)
+            let recorder = ScreenCaptureKitRecorder(directory: directory, bundleID: videoBundleID,
+                                                    micDeviceUID: micDeviceUID)
             do {
                 try await recorder.start()
                 callRecorder = recorder
@@ -77,7 +89,8 @@ public final class CaptureSession {
             }
         }
 
-        let micRec = MicRecorder(outputURL: directory.appendingPathComponent("mic.wav"))
+        let micRec = MicRecorder(outputURL: directory.appendingPathComponent("mic.wav"),
+                                 deviceUID: micDeviceUID, adaptiveGain: adaptiveGain)
         try micRec.start()
         mic = micRec
         if profile == .call {

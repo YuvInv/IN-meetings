@@ -8,10 +8,12 @@ struct AppSettingsView: View {
     var vadModels: ModelManager
     var drive: DriveAuth
     var capture: CaptureSettings
+    var audio: AudioDeviceSettings
     var body: some View {
         TabView {
             RecordingSettingsTab(settings: settings, capture: capture)
                 .tabItem { Label("Recording", systemImage: "phone") }
+            AudioSettingsTab(audio: audio).tabItem { Label("Audio", systemImage: "mic") }
             ModelSettingsTab(model: models, vad: vadModels).tabItem { Label("Model", systemImage: "cube.box") }
             DriveSettingsTab(drive: drive).tabItem { Label("Drive", systemImage: "externaldrive") }
         }

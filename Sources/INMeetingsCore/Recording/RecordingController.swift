@@ -28,6 +28,7 @@ public final class RecordingController {
 
     private let detector: CallDetector
     private let captureSettings: CaptureSettings
+    private let audioDeviceSettings: AudioDeviceSettings
     private var hotKey: GlobalHotKey?
     private var tick: Timer?
     private var session: CaptureSession?
@@ -42,11 +43,14 @@ public final class RecordingController {
     /// - Parameters:
     ///   - detector: source of the call-vs-no-call signal for profile auto-pick.
     ///   - captureSettings: video on/off + retention prefs (V1 video slice).
+    ///   - audioDeviceSettings: chosen input device + adaptive-gain prefs (A1).
     ///   - installHotKey: register the global ⌃⌥⌘R toggle (false in tests, to avoid side effects).
     public init(detector: CallDetector, captureSettings: CaptureSettings? = nil,
+                audioDeviceSettings: AudioDeviceSettings? = nil,
                 installHotKey: Bool = true) {
         self.detector = detector
         self.captureSettings = captureSettings ?? CaptureSettings()
+        self.audioDeviceSettings = audioDeviceSettings ?? AudioDeviceSettings()
         if installHotKey {
             hotKey = GlobalHotKey { [weak self] in self?.toggle() }
         }
@@ -91,8 +95,17 @@ public final class RecordingController {
         // takes effect on a later run, and capture degrades to audio-only until then.
         if recordingVideoBundleID != nil { Permissions.requestScreenRecording() }
 
+        // Resolve the chosen input device against what's plugged in (unplugged → system default), and build
+        // adaptive gain only when the user opted in (A1).
+        let available = AudioInputDeviceEnumerator().available()
+        let micDeviceUID = audioDeviceSettings.resolvedDeviceUID(available: available)
+        let adaptiveGain = audioDeviceSettings.adaptiveGainEnabled
+            ? AdaptiveGain(targetDBFS: Float(audioDeviceSettings.targetInputLevelDBFS))
+            : nil
+
         let session = CaptureSession(profile: profile, directory: RecordingsStore.newMeetingDirectory(),
-                                     videoBundleID: recordingVideoBundleID)
+                                     videoBundleID: recordingVideoBundleID,
+                                     micDeviceUID: micDeviceUID, adaptiveGain: adaptiveGain)
         do {
             try await session.start()
         } catch {

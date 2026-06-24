@@ -20,6 +20,7 @@ struct INMeetingsApp: App {
     @State private var vadModel: ModelManager
     @State private var promptSettings: MeetingDetectionSettings
     @State private var captureSettings: CaptureSettings
+    @State private var audioDeviceSettings: AudioDeviceSettings
     @State private var promptCoordinator: MeetingPromptCoordinator
     @State private var endCoordinator: MeetingEndCoordinator
     @State private var drive: DriveAuth
@@ -30,7 +31,10 @@ struct INMeetingsApp: App {
         _detector = State(initialValue: detector)
         let captureSettings = CaptureSettings()
         _captureSettings = State(initialValue: captureSettings)
-        let recorder = RecordingController(detector: detector, captureSettings: captureSettings)
+        let audioDeviceSettings = AudioDeviceSettings()
+        _audioDeviceSettings = State(initialValue: audioDeviceSettings)
+        let recorder = RecordingController(detector: detector, captureSettings: captureSettings,
+                                           audioDeviceSettings: audioDeviceSettings)
         _recorder = State(initialValue: recorder)
         let models = ModelManager()
         _models = State(initialValue: models)
@@ -74,7 +78,7 @@ struct INMeetingsApp: App {
 
         Settings {
             AppSettingsView(settings: promptSettings, models: models, vadModels: vadModel,
-                            drive: drive, capture: captureSettings)
+                            drive: drive, capture: captureSettings, audio: audioDeviceSettings)
         }
     }
 }

@@ -40,6 +40,9 @@ final class ScreenCaptureKitRecorder: NSObject, SCStreamOutput, SCStreamDelegate
 
     private let directory: URL
     private let bundleID: String
+    /// Persistent UID of the mic device to capture (decision 5: best-effort on the SCK path), or nil for the
+    /// system default. Threaded into `microphoneCaptureDeviceID` on macOS 15+.
+    private let micDeviceUID: String?
     private var videoURL: URL { directory.appendingPathComponent("video.mov") }
     private var micURL: URL { directory.appendingPathComponent("mic.wav") }
     private var systemURL: URL { directory.appendingPathComponent("system.wav") }
@@ -60,9 +63,10 @@ final class ScreenCaptureKitRecorder: NSObject, SCStreamOutput, SCStreamDelegate
     private var micPeak: Float = 0
     private var systemPeak: Float = 0
 
-    init(directory: URL, bundleID: String) {
+    init(directory: URL, bundleID: String, micDeviceUID: String? = nil) {
         self.directory = directory
         self.bundleID = bundleID
+        self.micDeviceUID = micDeviceUID
     }
 
     /// Find the call window, configure a stream that captures video + system audio + mic, and start.
@@ -90,6 +94,10 @@ final class ScreenCaptureKitRecorder: NSObject, SCStreamOutput, SCStreamDelegate
         config.channelCount = 1                // mono — fine for ASR + meeting playback; halves the audio
         if #available(macOS 15.0, *) {
             config.captureMicrophone = true    // the user's mic = "Me" (delivered as a separate stream)
+            // Best-effort device selection (decision 5): if the user picked a mic, capture from it; nil
+            // leaves SCK on the system default. Adaptive gain is NOT applied on the SCK path — only on the
+            // audio path's `MicRecorder` — so a video call records the raw chosen mic.
+            if let micDeviceUID { config.microphoneCaptureDeviceID = micDeviceUID }
         }
         config.width = w
         config.height = h
