@@ -28,6 +28,7 @@ struct INMeetingsApp: App {
     @State private var recipeSettings: SummaryRecipeSettings
     /// Bundled + user recipe registry; rebuilt from the app bundle's `skills/` folder reference.
     @State private var recipeRegistry: SummaryRecipeRegistry
+    private let launchAtLogin: SystemLaunchAtLogin = SystemLaunchAtLogin()
 
     init() {
         let detector = CallDetector()
@@ -87,9 +88,10 @@ struct INMeetingsApp: App {
         .defaultPosition(.center)
 
         Settings {
-            AppSettingsView(settings: promptSettings, models: models, vadModels: vadModel,
-                            drive: drive, capture: captureSettings, audio: audioDeviceSettings,
-                            recipeSettings: recipeSettings, recipeRegistry: recipeRegistry)
+            AppSettingsView(launchAtLogin: launchAtLogin, settings: promptSettings, models: models,
+                            vadModels: vadModel, drive: drive, capture: captureSettings,
+                            audio: audioDeviceSettings, recipeSettings: recipeSettings,
+                            recipeRegistry: recipeRegistry)
         }
     }
 }

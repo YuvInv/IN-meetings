@@ -3,6 +3,7 @@ import SwiftUI
 import INMeetingsCore
 
 struct AppSettingsView: View {
+    var launchAtLogin: LaunchAtLoginManaging
     var settings: MeetingDetectionSettings
     var models: ModelManager
     var vadModels: ModelManager
@@ -13,6 +14,8 @@ struct AppSettingsView: View {
     var recipeRegistry: SummaryRecipeRegistry
     var body: some View {
         TabView {
+            GeneralSettingsTab(launchAtLogin: launchAtLogin)
+                .tabItem { Label("General", systemImage: "gearshape") }
             RecordingSettingsTab(settings: settings, capture: capture)
                 .tabItem { Label("Recording", systemImage: "phone") }
             AudioSettingsTab(audio: audio).tabItem { Label("Audio", systemImage: "mic") }
