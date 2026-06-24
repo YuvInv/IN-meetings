@@ -80,7 +80,7 @@ dmg: ## Build a LOCAL UNSIGNED Release .dmg for install/onboarding testing (NOT 
 		printf "$(RED)[dmg]$(NC) FAILED: Release app not found. Try 'make gen'.\n"; exit 1; \
 	fi
 	@bash scripts/make-dmg.sh "$(RELEASE_PRODUCT)"
-	@printf "$(YELLOW)[dmg]$(NC) Open it, drag IN Meetings to Applications, then launch from /Applications.\n"
+	@printf "$(YELLOW)[dmg]$(NC) Open it, drag INV Meetings to Applications, then launch from /Applications.\n"
 
 .PHONY: verify-mac
 verify-mac: build-mac ## Build + launch + confirm the menu-bar process is alive

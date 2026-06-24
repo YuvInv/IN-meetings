@@ -84,7 +84,7 @@ public final class RecordingController {
             ? detector.state.callAppBundleIDs.first : nil
 
         guard await Permissions.requestMicrophone() else {
-            lastError = "Microphone access is required. Enable IN Meetings in System Settings ▸ Privacy & Security ▸ Microphone."
+            lastError = "Microphone access is required. Enable INV Meetings in System Settings ▸ Privacy & Security ▸ Microphone."
             return
         }
         // Provoke the Screen-Recording prompt up front (best-effort) so the user can grant it; the grant
@@ -145,7 +145,7 @@ public final class RecordingController {
         captureLog.notice("recording.done profile=\(result.profile.rawValue, privacy: .public) micPeak=\(result.micPeakDB, privacy: .public)dB sysPeak=\(result.systemPeakDB ?? -120, privacy: .public)dB video=\(result.video != nil, privacy: .public)")
 
         if result.profile == .call && result.systemCapturedSilence {
-            lastError = "System-audio track was silent — make sure audio is playing, and that IN Meetings has 'System Audio Recording' in System Settings (a relaunch after granting may be needed)."
+            lastError = "System-audio track was silent — make sure audio is playing, and that INV Meetings has 'System Audio Recording' in System Settings (a relaunch after granting may be needed)."
         }
         // Hand the recording to the transcription pipeline (ADR-009); record-time facts feed metadata.json.
         jobBridge.enqueue(result, startedAt: startedAt, endedAt: endedAt, captureSourceApp: captureSourceApp)

@@ -57,7 +57,7 @@ struct MeetingPromptOverlay: View {
             VStack(alignment: .leading, spacing: 5) {
                 Text("\(appLabel) — call detected")
                     .font(.callout.weight(.semibold))
-                Text("Record this call with IN Meetings?")
+                Text("Record this call with INV Meetings?")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

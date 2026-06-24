@@ -4,7 +4,7 @@ import INMeetingsCore
 /// The first-run permission wizard window: Welcome → Microphone → Screen & System Audio Recording →
 /// Google → Done. Every grant step is skippable ("Skip for now"), so the user always reaches the
 /// dashboard. The Screen & System Audio grant goes live on a relaunch, which the Done step front-loads via
-/// "Restart IN Meetings". (On macOS 15/26 that one grant also authorizes the "Them" audio track, so there's
+/// "Restart INV Meetings". (On macOS 15/26 that one grant also authorizes the "Them" audio track, so there's
 /// no separate system-audio step.)
 struct OnboardingWindow: View {
     @Bindable var model: OnboardingModel
@@ -60,7 +60,7 @@ struct OnboardingWindow: View {
             OnboardingStepView(
                 systemImage: "mic.fill",
                 title: "Microphone",
-                explanation: "Lets IN Meetings record your side of a call. This is the one permission the app really needs.",
+                explanation: "Lets INV Meetings record your side of a call. This is the one permission the app really needs.",
                 granted: model.micGranted,
                 actionLabel: "Allow Microphone",
                 action: { run { await model.requestMicrophone() } },
@@ -71,7 +71,7 @@ struct OnboardingWindow: View {
             OnboardingStepView(
                 systemImage: "rectangle.inset.filled.badge.record",
                 title: "Screen & System Audio Recording",
-                explanation: "Lets IN Meetings record the call window (participants and shared screen) and the other participants’ audio — the “Them” track. macOS groups both under this one permission.",
+                explanation: "Lets INV Meetings record the call window (participants and shared screen) and the other participants’ audio — the “Them” track. macOS groups both under this one permission.",
                 granted: model.screenGranted,
                 actionLabel: "Allow Screen & System Audio",
                 action: { model.requestScreenRecording() },
@@ -91,7 +91,7 @@ struct OnboardingWindow: View {
         VStack(spacing: 16) {
             Image(nsImage: NSApp.applicationIconImage ?? NSImage())
                 .resizable().aspectRatio(contentMode: .fit).frame(width: 72, height: 72)
-            Text("Welcome to IN Meetings")
+            Text("Welcome to INV Meetings")
                 .font(.largeTitle.weight(.semibold))
             Text("A quick, ~1-minute setup so the app can record your calls, transcribe them on-device, and back them up. You can skip any step and finish it later.")
                 .font(.callout)
@@ -193,7 +193,7 @@ struct OnboardingWindow: View {
             }
             Spacer()
             if model.isLast {
-                Button(model.needsRestart ? "Restart IN Meetings" : "Finish") {
+                Button(model.needsRestart ? "Restart INV Meetings" : "Finish") {
                     model.finish()
                     if !model.needsRestart { dismissWindow(id: "onboarding") }
                 }

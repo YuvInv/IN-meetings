@@ -13,7 +13,7 @@
 	<key>CFBundleName</key>
 	<string>$(PRODUCT_NAME)</string>
 	<key>CFBundleDisplayName</key>
-	<string>IN Meetings</string>
+	<string>INV Meetings</string>
 	<key>CFBundlePackageType</key>
 	<string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
 	<key>CFBundleShortVersionString</key>
@@ -27,11 +27,11 @@
 	<key>NSHumanReadableCopyright</key>
 	<string>© 2026 IN Venture</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>IN Meetings records your microphone as a separate track so meetings can be transcribed with speaker attribution.</string>
+	<string>INV Meetings records your microphone as a separate track so meetings can be transcribed with speaker attribution.</string>
 	<key>NSAudioCaptureUsageDescription</key>
-	<string>IN Meetings records the meeting's system audio (the remote participants) as a separate track for transcription.</string>
+	<string>INV Meetings records the meeting's system audio (the remote participants) as a separate track for transcription.</string>
 	<key>NSScreenCaptureUsageDescription</key>
-	<string>IN Meetings records the call window (participants and shared screen) as a video of the meeting for review.</string>
+	<string>INV Meetings records the call window (participants and shared screen) as a video of the meeting for review.</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>

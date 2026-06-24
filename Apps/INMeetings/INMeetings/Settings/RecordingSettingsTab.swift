@@ -49,7 +49,7 @@ struct RecordingSettingsTab: View {
                 Toggle("Auto-summarize finished calls", isOn: Binding(
                     get: { capture.autoSummary },
                     set: { capture.autoSummary = $0 }))
-                Text("When a call finishes, IN Meetings asks Claude to write a short Saventa-style deal summary — shown on the meeting and synced to Drive. Runs locally via the Claude Code CLI (requires `claude` installed and signed in). Off → summarize manually from a meeting.")
+                Text("When a call finishes, INV Meetings asks Claude to write a short Saventa-style deal summary — shown on the meeting and synced to Drive. Runs locally via the Claude Code CLI (requires `claude` installed and signed in). Off → summarize manually from a meeting.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
