@@ -274,29 +274,41 @@ public final class JobBridge {
             MainActor.assumeIsolated {
                 guard let self else { timer.invalidate(); return }
                 guard let data = try? Data(contentsOf: statusURL),
-                      let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                      let phase = obj["phase"] as? String else { return }
-                self.phase = phase
-                self.progress = obj["progress"] as? Double
-                if phase == "done" || phase == "failed" {
-                    let folder = statusURL.deletingLastPathComponent()
-                    if phase == "failed" {
-                        self.lastError = obj["error"] as? String
-                        self.recordFailure(folder: folder, error: obj["error"] as? String)
-                    }
-                    if phase == "done" {
-                        self.indexCompletedPackage(at: folder)
-                        self.notifyDashboard()
-                    }
-                    captureLog.notice("jobbridge.finished phase=\(phase, privacy: .public)")
-                    timer.invalidate()
-                    self.isRunning = false
-                    self.activeMeetingID = nil
-                    self.progress = nil
-                    self.startNextIfQueued()
-                }
+                      let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
+                self.applyStatus(obj, folder: statusURL.deletingLastPathComponent(), timer: timer)
             }
         }
+    }
+
+    /// Apply one parsed `status.json` payload to the bridge's observable state — the body of the
+    /// `watchStatus` poll, extracted so it's unit-testable without spawning a real subprocess. Updates
+    /// `phase`/`progress` on each tick (A3 decision 1) and, on a terminal phase, runs completion
+    /// (indexing/Drive/summary), clears the active job, and drains the next queued spawn.
+    ///
+    /// - Parameter timer: the polling timer to invalidate on a terminal phase (nil in tests).
+    /// - Returns: `true` once a terminal phase (`done`/`failed`) was reached, else `false`.
+    @discardableResult
+    func applyStatus(_ obj: [String: Any], folder: URL, timer: Timer? = nil) -> Bool {
+        guard let phase = obj["phase"] as? String else { return false }
+        self.phase = phase
+        self.progress = obj["progress"] as? Double
+        guard phase == "done" || phase == "failed" else { return false }
+
+        if phase == "failed" {
+            self.lastError = obj["error"] as? String
+            self.recordFailure(folder: folder, error: obj["error"] as? String)
+        }
+        if phase == "done" {
+            self.indexCompletedPackage(at: folder)
+            self.notifyDashboard()
+        }
+        captureLog.notice("jobbridge.finished phase=\(phase, privacy: .public)")
+        timer?.invalidate()
+        self.isRunning = false
+        self.activeMeetingID = nil
+        self.progress = nil
+        self.startNextIfQueued()
+        return true
     }
 
     /// Mirror a finished package into the SQLite index (ADR-006) so the dashboard can see it.
@@ -353,7 +365,7 @@ public final class JobBridge {
         }
         _ = try? store?.markProcessing(folder: folder)
         notifyDashboard()
-        if !isRunning { lastError = nil; phase = "queued" }
+        if !isRunning { lastError = nil; phase = "queued"; progress = nil }
         beginOrQueue { [weak self] in self?.spawn(jobURL: jobURL, statusURL: statusURL) }
     }
 

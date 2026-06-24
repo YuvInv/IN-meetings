@@ -43,36 +43,52 @@ final class JobBridgeTests: XCTestCase {
         XCTAssertNil(job["capture_source_app"])
     }
 
-    // MARK: - A3: progress parsing from status.json (decision 1)
-    // These verify that the JSON keys the pipeline already writes (`progress`, `outputs`) are now
-    // surfaced on `JobBridge` rather than silently dropped. Because `watchStatus` is driven by a live
-    // `Process`, we test the parsing logic by exercising `JobBridge`'s public surface via a synthetic
-    // status.json on disk — the same mechanism the existing spawn path uses.
+    // MARK: - A3: status → observable state (decision 1)
+    // `watchStatus`'s parse-and-assign body is extracted into `applyStatus(_:folder:timer:)` so it's
+    // testable without a live subprocess. These feed a status payload straight in and assert the
+    // *observable* `phase`/`progress` actually update — i.e. the pipeline's `progress` field reaches the
+    // UI rather than being silently dropped (the gap the prior JSON-only tests couldn't catch).
 
-    /// The `progress` field in status.json is a `Double` (0–1); confirm it round-trips through
-    /// JSONSerialization the same way the watchStatus timer reads it.
-    func testProgressParsingFromStatusJSON() throws {
-        let statusPayload: [String: Any] = [
-            "phase": "transcribing",
-            "progress": 0.35,
-            "updated_at": "2026-06-24T10:00:00Z",
-        ]
-        let data = try JSONSerialization.data(withJSONObject: statusPayload)
-        let obj = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+    /// A non-terminal status with `progress: 0.35` sets `JobBridge.progress == 0.35` (and `phase`),
+    /// and reports non-terminal (false).
+    @MainActor
+    func testApplyStatusSurfacesProgress() {
+        let bridge = JobBridge()
+        let terminal = bridge.applyStatus(
+            ["phase": "transcribing", "progress": 0.35],
+            folder: URL(filePath: "/tmp/meeting"))
 
-        let progress = try XCTUnwrap(obj["progress"] as? Double)
-        XCTAssertEqual(progress, 0.35, accuracy: 0.0001)
+        XCTAssertFalse(terminal)
+        XCTAssertEqual(bridge.phase, "transcribing")
+        let progress = try? XCTUnwrap(bridge.progress)
+        XCTAssertEqual(progress ?? -1, 0.35, accuracy: 0.0001)
     }
 
-    func testProgressParsingMissingKeyReturnsNil() throws {
-        let statusPayload: [String: Any] = [
-            "phase": "diarizing",
-            "updated_at": "2026-06-24T10:00:00Z",
-        ]
-        let data = try JSONSerialization.data(withJSONObject: statusPayload)
-        let obj = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+    /// A status with no `progress` key leaves `progress` nil while still advancing `phase` — a phase
+    /// without granular progress (e.g. diarizing just starting) must not carry over a stale fraction.
+    @MainActor
+    func testApplyStatusMissingProgressIsNil() {
+        let bridge = JobBridge()
+        _ = bridge.applyStatus(["phase": "transcribing", "progress": 0.5],
+                               folder: URL(filePath: "/tmp/meeting"))
+        let terminal = bridge.applyStatus(["phase": "diarizing"],
+                                          folder: URL(filePath: "/tmp/meeting"))
 
-        let progress = obj["progress"] as? Double
-        XCTAssertNil(progress)
+        XCTAssertFalse(terminal)
+        XCTAssertEqual(bridge.phase, "diarizing")
+        XCTAssertNil(bridge.progress)
+    }
+
+    /// A malformed payload (no `phase`) is ignored — neither `phase` nor `progress` is mutated.
+    @MainActor
+    func testApplyStatusWithoutPhaseIsIgnored() {
+        let bridge = JobBridge()
+        _ = bridge.applyStatus(["phase": "packaging", "progress": 0.9],
+                               folder: URL(filePath: "/tmp/meeting"))
+        let terminal = bridge.applyStatus(["progress": 0.1], folder: URL(filePath: "/tmp/meeting"))
+
+        XCTAssertFalse(terminal)
+        XCTAssertEqual(bridge.phase, "packaging")
+        XCTAssertEqual(bridge.progress ?? -1, 0.9, accuracy: 0.0001)
     }
 }

@@ -5,7 +5,7 @@ import INMeetingsCore
 /// its summary. Each row carries the live pipeline phase, a progress bar, and — on failure — a
 /// "Reveal pipeline.log" button and a Retry button (A3).
 struct QueueView: View {
-    @State var model: QueueModel
+    let model: QueueModel
     let store: RecordingStore
     let jobBridge: JobBridge
 
