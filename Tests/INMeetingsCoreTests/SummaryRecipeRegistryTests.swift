@@ -158,4 +158,52 @@ final class SummaryRecipeRegistryTests: XCTestCase {
         let registry = SummaryRecipeRegistry(bundledRoot: bundledRoot, userRoot: userRoot)
         XCTAssertNil(registry.active(id: "anything"))
     }
+
+    // MARK: - name.txt display-name override
+
+    func testUserRecipeWithNameTxtUsesStoredName() throws {
+        let bundledRoot = try makeTempDir(name: "bundled")
+        defer { try? FileManager.default.removeItem(at: bundledRoot) }
+        let userRoot = try makeTempDir(name: "user")
+        defer { try? FileManager.default.removeItem(at: userRoot) }
+
+        // Create a user recipe folder with recipe.md + name.txt
+        let recipeDir = userRoot.appendingPathComponent("vc-update")
+        try FileManager.default.createDirectory(at: recipeDir, withIntermediateDirectories: true)
+        try "Summarize bullets.".write(to: recipeDir.appendingPathComponent("recipe.md"), atomically: true, encoding: .utf8)
+        try "VC Update".write(to: recipeDir.appendingPathComponent("name.txt"), atomically: true, encoding: .utf8)
+
+        let registry = SummaryRecipeRegistry(bundledRoot: bundledRoot, userRoot: userRoot)
+        let recipe = registry.recipe(id: "vc-update")
+        XCTAssertEqual(recipe?.displayName, "VC Update")   // exact casing from name.txt
+    }
+
+    func testUserRecipeWithoutNameTxtFallsBackToHumanize() throws {
+        let bundledRoot = try makeTempDir(name: "bundled")
+        defer { try? FileManager.default.removeItem(at: bundledRoot) }
+        let userRoot = try makeTempDir(name: "user")
+        defer { try? FileManager.default.removeItem(at: userRoot) }
+
+        // No name.txt — only recipe.md
+        try addRecipe(named: "deal-summary", to: userRoot)
+
+        let registry = SummaryRecipeRegistry(bundledRoot: bundledRoot, userRoot: userRoot)
+        let recipe = registry.recipe(id: "deal-summary")
+        XCTAssertEqual(recipe?.displayName, "Deal Summary")   // humanize fallback
+    }
+
+    func testBundledRecipeIgnoresNameTxt() throws {
+        let bundledRoot = try makeTempDir(name: "bundled")
+        defer { try? FileManager.default.removeItem(at: bundledRoot) }
+        let userRoot = try makeTempDir(name: "user")
+        defer { try? FileManager.default.removeItem(at: userRoot) }
+
+        // Even if someone puts a name.txt in a bundled folder, bundled recipes stay humanized.
+        let recipeDir = try addRecipe(named: "saventa-summary", to: bundledRoot)
+        try "Override Name".write(to: recipeDir.appendingPathComponent("name.txt"), atomically: true, encoding: .utf8)
+
+        let registry = SummaryRecipeRegistry(bundledRoot: bundledRoot, userRoot: userRoot)
+        let recipe = registry.recipe(id: "saventa-summary")
+        XCTAssertEqual(recipe?.displayName, "Saventa Summary")   // humanize, not the override
+    }
 }

@@ -2,20 +2,31 @@ import SwiftUI
 import AppKit
 import INMeetingsCore
 
-/// Settings → Summary: pick the active summary recipe, toggle auto-summary, and open the custom
-/// recipes folder. The recipe `Picker` is driven by a `SummaryRecipeRegistry` (bundled + user recipes);
-/// the selection is persisted via `SummaryRecipeSettings` to `UserDefaults` and read off the main actor
-/// by `JobBridge`'s `SummaryRunner` at run time (A2).
+/// Settings → Summary: auto-summary toggle, active-recipe picker, and a Custom recipes list
+/// where users create, edit, and delete their own recipes in-app (replacing the old
+/// "Reveal custom recipes folder" flow).
+///
+/// Uses a `SummaryRecipeStore` for mutations and a `SummaryRecipeRegistry` (passed from the app)
+/// for reading. A `refreshToken` integer is bumped on every sheet dismiss so `registry.all()` is
+/// re-evaluated and both the list and the picker reflect any change.
 struct SummarySettingsTab: View {
     var recipeSettings: SummaryRecipeSettings
     var capture: CaptureSettings
     var registry: SummaryRecipeRegistry
+
+    /// Bump to force the recipe list and picker to re-read the file system after a mutation.
+    @State private var refreshToken = 0
+    /// The recipe being created/edited; `nil` → no sheet shown.
+    @State private var editorTarget: EditorTarget?
+
+    private let store = SummaryRecipeStore()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             Text("Summary")
                 .font(.title2.weight(.semibold))
 
+            // Auto-summary toggle
             VStack(alignment: .leading, spacing: 8) {
                 Toggle("Auto-summarize finished calls", isOn: Binding(
                     get: { capture.autoSummary },
@@ -27,14 +38,16 @@ struct SummarySettingsTab: View {
 
             Divider()
 
+            // Active recipe picker
             VStack(alignment: .leading, spacing: 8) {
                 Text("Active recipe")
                     .font(.headline)
 
+                let allRecipes = recipes()
                 Picker("Recipe", selection: Binding(
                     get: { recipeSettings.activeRecipeID },
                     set: { recipeSettings.activeRecipeID = $0 })) {
-                    ForEach(registry.all()) { recipe in
+                    ForEach(allRecipes) { recipe in
                         Text(recipe.displayName)
                             .tag(recipe.id)
                     }
@@ -42,27 +55,107 @@ struct SummarySettingsTab: View {
                 .labelsHidden()
                 .pickerStyle(.menu)
                 .frame(maxWidth: 260)
+                .id(refreshToken)   // force picker to reload its options after a recipe change
 
-                Text("The active recipe determines the style and format of summaries. Bundled recipes ship with the app; custom ones live in your Recipes folder.")
+                Text("The active recipe determines the style and format of summaries.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
-            VStack(alignment: .leading, spacing: 8) {
-                Button("Reveal custom recipes folder…") {
-                    let dir = SummaryRecipeRegistry.standardUserRecipesURL
-                    // Create the folder if it doesn't exist yet (first time) so Finder shows something useful.
-                    try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-                    NSWorkspace.shared.activateFileViewerSelecting([dir])
+            Divider()
+
+            // Custom recipes section
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text("Custom recipes")
+                        .font(.headline)
+                    Spacer()
+                    Button("＋ New recipe") { editorTarget = .create }
+                        .controlSize(.small)
                 }
-                .controlSize(.regular)
-                Text("Drop a folder containing `recipe.md` here to add a custom recipe. It will appear in the picker on next launch.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+
+                let userRecipes = recipes().filter { !$0.isBuiltIn }
+                if userRecipes.isEmpty {
+                    Text("No custom recipes yet. Use ＋ New recipe to create one.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    VStack(spacing: 0) {
+                        ForEach(userRecipes) { recipe in
+                            HStack {
+                                Text(recipe.displayName)
+                                    .lineLimit(1)
+                                Spacer()
+                                Button("Edit") { editorTarget = .edit(recipe) }
+                                    .controlSize(.small)
+                                Button("Delete") { deleteRecipe(recipe) }
+                                    .controlSize(.small)
+                            }
+                            .padding(.vertical, 6)
+                            .padding(.horizontal, 8)
+                            if recipe.id != userRecipes.last?.id {
+                                Divider()
+                            }
+                        }
+                    }
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(Color(nsColor: .controlBackgroundColor))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
+                    )
+                }
             }
 
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .sheet(item: $editorTarget) { target in
+            RecipeEditorSheet(
+                store: store,
+                recipe: target.recipe,
+                onDismiss: {
+                    editorTarget = nil
+                    refreshToken += 1
+                }
+            )
+        }
+    }
+
+    // MARK: - Helpers
+
+    private func recipes() -> [SummaryRecipe] {
+        _ = refreshToken   // depend on the token so SwiftUI re-evaluates after bumps
+        return registry.all()
+    }
+
+    private func deleteRecipe(_ recipe: SummaryRecipe) {
+        try? store.delete(id: recipe.id)
+        refreshToken += 1
+    }
+
+    // MARK: - Editor target
+
+    /// Identifies what the editor sheet is working on. `Identifiable` so `sheet(item:)` works.
+    private enum EditorTarget: Identifiable {
+        case create
+        case edit(SummaryRecipe)
+
+        var id: String {
+            switch self {
+            case .create:        return "create"
+            case .edit(let r):   return "edit-\(r.id)"
+            }
+        }
+
+        /// The recipe to pass to `RecipeEditorSheet` (`nil` for create).
+        var recipe: SummaryRecipe? {
+            switch self {
+            case .create:        return nil
+            case .edit(let r):   return r
+            }
+        }
     }
 }

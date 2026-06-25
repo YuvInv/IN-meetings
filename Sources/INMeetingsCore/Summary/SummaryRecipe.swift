@@ -98,8 +98,18 @@ public struct SummaryRecipeRegistry: Sendable {
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
             .map { url in
                 let id = url.lastPathComponent
-                return SummaryRecipe(id: id, displayName: humanize(id: id),
-                                     resourcesURL: url, isBuiltIn: isBuiltIn)
+                // User recipes may carry a `name.txt` with the exact display name the user chose
+                // (preserves casing/acronyms like "VC Update"). Bundled recipes have no `name.txt`.
+                let nameTxtURL = url.appendingPathComponent("name.txt")
+                let displayName: String
+                if !isBuiltIn,
+                   let stored = try? String(contentsOf: nameTxtURL, encoding: .utf8),
+                   !stored.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    displayName = stored.trimmingCharacters(in: .whitespacesAndNewlines)
+                } else {
+                    displayName = humanize(id: id)
+                }
+                return SummaryRecipe(id: id, displayName: displayName, resourcesURL: url, isBuiltIn: isBuiltIn)
             }
     }
 }
