@@ -1,4 +1,4 @@
-# Agent Handoff — IN-meetings
+# Agent Handoff — INV Meetings
 
 <!--
 Rewritten at every handoff. The incoming agent reads this + DECISIONS.md before starting.

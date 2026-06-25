@@ -1,6 +1,6 @@
 # Architecture Decision Records
 
-Design-phase ADRs for IN-Meetings. Each resolves a brief item with options, tradeoffs, and a single
+Design-phase ADRs for INV Meetings. Each resolves a brief item with options, tradeoffs, and a single
 recommendation. One-line mirrors live in [`../DECISIONS.md`](../DECISIONS.md); the spine is
 [`../DESIGN.md`](../DESIGN.md).
 

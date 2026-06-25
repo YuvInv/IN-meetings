@@ -1,6 +1,6 @@
 # Third-Party Notices
 
-IN-meetings incorporates and adapts third-party software. This file documents
+INV Meetings incorporates and adapts third-party software. This file documents
 each component, its license, and what we changed, as required by those licenses.
 See also [`NOTICE`](NOTICE) and [`licenses/`](licenses/).
 

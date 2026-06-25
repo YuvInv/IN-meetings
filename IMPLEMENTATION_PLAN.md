@@ -1,4 +1,4 @@
-# IMPLEMENTATION_PLAN — IN-Meetings
+# IMPLEMENTATION_PLAN — INV Meetings
 
 **Phase-3 deliverable.** Proposed repo structure, a phased delivery plan (MVP first), and the riskiest
 unknowns to prototype before committing to the full build. Backed by [`DESIGN.md`](DESIGN.md),
@@ -37,8 +37,9 @@ retention/size cap rides with it. Full rationale in `DECISIONS.md` (2026-06-15).
    Liquid Glass wizard: **Microphone → Screen & System Audio Recording → Google sign-in** (3 steps — macOS
    15/26 has no separate system-audio grant; DECISIONS 2026-06-22), every step skippable (single primary
    grant button + "Skip for now"; nothing blocks the dashboard), **restart at the end** for Screen Recording.
-   Pure Core `OnboardingChecklist` (tested) + app `OnboardingModel`/`OnboardingWindow`; auto-opens first run,
-   re-runnable from the menu ("Set up IN Meetings…"). Also added **model visibility + management** (wizard
+   Pure Core `OnboardingChecklist` (tested) + app `OnboardingModel`/`OnboardingWindow`; auto-opens first run
+   (re-run via `make reset-test-data`; the menu "Set up…" entry was later removed in the cleanup pass). Also
+   added **model visibility + management** (wizard
    download status; Settings → Models path/size/Reveal/Delete/Re-download) + the local test tooling
    (`make dmg`, `make reset-test-data`). (ADR-009.) Live-verified by Yuval.
 4. **Reliability pass (goal 1).** ✅ **DONE (PR #10):** Silero VAD bundled in the app + provisioned-from-

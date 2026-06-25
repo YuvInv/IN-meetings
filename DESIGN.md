@@ -1,4 +1,4 @@
-# DESIGN — IN-Meetings
+# DESIGN — INV Meetings
 
 **Native macOS meeting recorder + Hebrew transcription pipeline for IN Venture.**
 Phase-2 deliverable. Every decision below has a dedicated ADR in [`adr/`](adr/) with options and
@@ -46,7 +46,7 @@ territory is unoccupied: no shipping competitor combines local processing + Hebr
 
 ```
                           ┌──────────────────────────────────────────────┐
-   menu-bar agent (Swift) │  IN-Meetings.app  (LSUIElement, launch-at-login)│
+   menu-bar agent (Swift) │  INV Meetings.app (LSUIElement, launch-at-login)│
                           └──────────────────────────────────────────────┘
                                           │
         detect ──► banner ──► capture ──► (meeting ends) ──► hand off folder

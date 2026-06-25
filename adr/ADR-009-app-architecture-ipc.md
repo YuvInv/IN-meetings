@@ -17,7 +17,7 @@ communicate cleanly, survive crashes, and be observable.
 **Swift/SwiftUI menu-bar app (orchestrator + capture + UI) + a bundled Python pipeline, talking over a
 file-based job queue with JSON status.**
 
-**Swift app (`IN-Meetings.app`, `LSUIElement`):**
+**Swift app (`INV Meetings.app`, `LSUIElement`):**
 - Detection (ADR-001), capture (ADR-002), banner + dashboard (ADR-001/007), SQLite owner, Drive upload
   trigger, Keychain, launch-at-login, onboarding wizard.
 - Owns the menu-bar lifecycle; spawns pipeline jobs; reflects their status in the UI.
