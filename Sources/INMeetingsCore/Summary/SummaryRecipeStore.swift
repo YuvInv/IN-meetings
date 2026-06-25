@@ -120,6 +120,10 @@ public struct SummaryRecipeStore: Sendable {
     // MARK: - Private
 
     /// Return a slug that is unique vs existing folder names under `userRoot`.
+    ///
+    /// Note: the snapshot→createDirectory sequence in `create` is non-atomic. A collision between
+    /// two concurrent creates (e.g. two Settings windows) could theoretically produce the same
+    /// folder name. This is acceptable for a single-user Settings sheet; no extra guard needed.
     private func uniqueSlug(from name: String) -> String {
         let base = Self.slug(from: name)
         let existingIDs = existingFolderNames()

@@ -23,8 +23,10 @@ struct RecipeEditorSheet: View {
         self.store = store
         self.recipe = recipe
         self.onDismiss = onDismiss
-        _name         = State(initialValue: recipe.map { _ in "" } ?? "")
-        _instructions = State(initialValue: "")
+        // For editing, seed the fields from the store immediately so they are populated before
+        // the view appears (avoids a blank-then-filled flash).
+        _name         = State(initialValue: recipe.flatMap { store.displayName(id: $0.id) } ?? "")
+        _instructions = State(initialValue: recipe.flatMap { store.instructions(id: $0.id) } ?? "")
     }
 
     private var isEditing: Bool { recipe != nil }
@@ -99,13 +101,6 @@ struct RecipeEditorSheet: View {
             .padding()
         }
         .frame(width: 520)
-        .onAppear {
-            // Load content for the editing case (avoids fetching file in init).
-            if let r = recipe {
-                name         = store.displayName(id: r.id) ?? r.displayName
-                instructions = store.instructions(id: r.id) ?? ""
-            }
-        }
     }
 
     // MARK: - Actions

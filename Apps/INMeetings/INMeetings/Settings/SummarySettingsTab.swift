@@ -18,6 +18,8 @@ struct SummarySettingsTab: View {
     @State private var refreshToken = 0
     /// The recipe being created/edited; `nil` → no sheet shown.
     @State private var editorTarget: EditorTarget?
+    /// Set when the user taps the inline Delete button; drives the confirmation dialog.
+    @State private var pendingDelete: SummaryRecipe?
 
     private let store = SummaryRecipeStore()
 
@@ -88,7 +90,7 @@ struct SummarySettingsTab: View {
                                 Spacer()
                                 Button("Edit") { editorTarget = .edit(recipe) }
                                     .controlSize(.small)
-                                Button("Delete") { deleteRecipe(recipe) }
+                                Button("Delete", role: .destructive) { pendingDelete = recipe }
                                     .controlSize(.small)
                             }
                             .padding(.vertical, 6)
@@ -121,6 +123,18 @@ struct SummarySettingsTab: View {
                     refreshToken += 1
                 }
             )
+        }
+        .confirmationDialog(
+            "Delete \"\(pendingDelete?.displayName ?? "")\"?",
+            isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }),
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                if let r = pendingDelete { deleteRecipe(r) }
+                pendingDelete = nil
+            }
+        } message: {
+            Text("This removes the recipe permanently. Meetings that used it keep their summaries.")
         }
     }
 
