@@ -9,10 +9,28 @@ Keep it short: last state, next steps, gotchas. History lives in git log.
 Claude Code · 2026-06-24 (v1 breadth features session)
 
 ## Current State
-**Branch `feat/v1-breadth-features` (8 commits) implements the 5 v1 breadth features + the distribution
-pipeline.** All build + unit-test + code-review green: **Core 219/0**, `make build-mac` SUCCEEDED.
-**NOT yet pushed to remote.** The live-verification gate with Yuval is pending (real device / real
-recording / dictation AX grant / launch-at-login post-install / queue view on a real call).
+**Branch `feat/v1-breadth-features` implements the 5 v1 breadth features + distribution pipeline +
+summary-pane bugfix + custom summaries.** All build + unit-test + code-review green: **Core 265/0**,
+`make build-mac` SUCCEEDED. **NOT yet pushed to remote.**
+
+**What's on this branch (full):**
+- **A1–A6 + DIST**: audio device picker, summary recipe registry, queue view, launch-at-login + version,
+  dictation (on-device hotkey), unsigned-DMG distribution pipeline (see DECISIONS 2026-06-24).
+- **Summary-pane bugfix** (`ee095c2`): `showSummaryPane` changed `@AppStorage` → `@State` so collapsing
+  the pane on one meeting doesn't hide it globally (see DECISIONS 2026-06-25 first entry).
+- **Custom summaries** (3 tasks, see DECISIONS 2026-06-25 second entry):
+  - **In-app recipe editor**: Settings → Summary create/edit/delete sheet; saved to
+    `~/Library/Application Support/IN Meetings/Recipes/<slug>/recipe.md` + `name.txt`.
+  - **Multiple summaries per meeting**: per-recipe `summaries/<recipeId>.md` + `summary.md` mirror;
+    migration v5 `meetingSummary` table; `SummaryRunner` writes per-recipe with per-(meeting,recipe)
+    in-flight guard + rollup update; Drive syncs per-recipe files.
+  - **Meeting-page UI**: summary switcher across a meeting's recipes + "Summarize with… ▾" per-meeting
+    menu + Copy/Re-run/Delete per summary; `SummaryReconcile` deletes cleanly (no phantom entries,
+    Queue never stuck).
+
+Live-verification pending with Yuval (real device / real recording / dictation AX grant /
+launch-at-login post-install / queue view on a real call / **custom summaries: create a recipe, run two
+recipes on one meeting, switch/Copy/Re-run/Delete**).
 
 `main` is at the PR #19 merge (rename INV Meetings). The breadth branch was cut from the post-rename `main`.
 
@@ -48,6 +66,9 @@ recording / dictation AX grant / launch-at-login post-install / queue view on a 
 6. Dictation — grant AX when prompted, ⌃⌥⌘D in a text field, speak, ⌃⌥⌘D again, confirm Hebrew pasted.
 7. Unsigned DMG CI — push a `v*` tag to a fork / test repo, confirm the workflow runs and produces a GitHub
    Release with the DMG attached.
+8. Custom summaries — Settings → Summary: create a recipe (name + instructions), save; open a meeting;
+   "Summarize with… ▾" → run the new recipe; confirm `summaries/<id>.md` appears; run a second recipe;
+   use the switcher; Copy/Re-run/Delete each entry; confirm no phantom entry in Queue view.
 
 **After live-verify:** push branch → open PR → merge → activate the account-gated distribution (Developer
 ID + notarization + Sparkle) when the $99 Apple Developer account lands.

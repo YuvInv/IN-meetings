@@ -85,12 +85,13 @@ retention/size cap rides with it. Full rationale in `DECISIONS.md` (2026-06-15).
     `MeetingDetailView` is a fixed `VStack`. Likely `HSplitView`/`VSplitView` with persisted sizes, adapting
     when there's no video. **Brief: `docs/superpowers/specs/2026-06-22-modular-meeting-layout-brief.md`.**
 
-### v1 Breadth — A1…A6 + distribution (branch `feat/v1-breadth-features`, 2026-06-24)
-All build + Core 219/0 green; NOT yet pushed; live-verification pending with Yuval.
+### v1 Breadth — A1…A6 + distribution + custom summaries (branch `feat/v1-breadth-features`, 2026-06-24/25)
+All build + Core 265/0 green; NOT yet pushed; live-verification pending with Yuval.
 - **A1 audio device picker** ✅ (Settings → Audio tab; CoreAudio UID enumeration; system-default fallback;
   adaptive gain default OFF).
 - **A2 summary recipes** ✅ (registry: bundled + user Recipes dir; recipe-agnostic `makeArguments`; active
   recipe off-main; 2nd bundled `brief-summary`; Settings → Summary tab, autoSummary toggle moved here).
+  **Extended with custom summaries** ✅ (see below).
 - **A3 queue / processing view** ✅ (JobBridge `progress` + `activeMeetingID`; computed `QueueModel.items`;
   per-phase labels + progress bar + Reveal-log + Retry; `QueuePhase.derive` unit-tested).
 - **A4 settings — launch-at-login + version** ✅ (`SMAppService.mainApp` behind `LaunchAtLoginManaging`;
@@ -100,11 +101,21 @@ All build + Core 219/0 green; NOT yet pushed; live-verification pending with Yuv
 - **DIST distribution pipeline** ✅ (`.github/workflows/release.yml` → unsigned DMG → GitHub Releases on
   `v*` tag, works NOW; `docs/appcast.xml` template; architecture: GitHub Releases + Pages + Sparkle 2
   EdDSA; signing/notarization/Sparkle account-gated on secrets).
+- **Custom summaries** ✅ (2026-06-25 — extends A2; delivers the "custom summary recipes" direction from
+  Future/post-v1 as a first-class feature):
+  - **In-app recipe editor**: Settings → Summary create/edit/delete sheet; `SummaryRecipeStore` saves to
+    `~/Library/Application Support/IN Meetings/Recipes/<slug>/recipe.md` + `name.txt`.
+  - **Multiple summaries per meeting**: per-recipe `summaries/<recipeId>.md` output + `summary.md` mirror
+    (back-compat); migration v5 `meetingSummary` table; `SummaryRunner` per-recipe with in-flight guard +
+    rollup; Drive syncs per-recipe files. Frozen ADR-005 schemas untouched.
+  - **Meeting-page UI**: summary switcher + "Summarize with… ▾" per-meeting menu + Copy/Re-run/Delete;
+    `SummaryReconcile` deletes cleanly (no phantom Queue entries).
+  ⏳ live-verify: create a recipe, run two recipes on one meeting, switch/Copy/Re-run/Delete.
 
 ### P2 — Polish & robustness extras
 Speaker naming ✅ (PR #11, manual one-tap assign). _(Auto-stop moved up to a P1 must-have, 2026-06-16.)_
-Mic-device picker ✅ (A1, breadth branch). Hotkey rebind + storage/consent settings + custom recipe UI ✅
-(A2/A4/A6 breadth branch).
+Mic-device picker ✅ (A1, breadth branch). Hotkey rebind + storage/consent settings ✅ (A4/A6 breadth branch).
+Custom recipe UI + multiple summaries per meeting ✅ (breadth branch, 2026-06-25).
 Remaining: ring-buffer pre-roll; trash/delete + export-SRT + open-in-Drive; fuzzy/edit-distance
 post-correction; tighten Drive scope to `drive.file`; a global cache-size cap. (Onboarding/TCC wizard ✅
 done, PR #14.)
