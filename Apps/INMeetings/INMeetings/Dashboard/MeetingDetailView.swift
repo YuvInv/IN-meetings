@@ -21,6 +21,11 @@ struct MeetingDetailView: View {
     // always shows it by default, and collapsing it affects only the meeting you're viewing. (A global
     // persisted toggle silently hid the summary on every meeting once turned off — see DECISIONS 2026-06-25.)
     @State private var showSummaryPane = true
+    /// The recipe id of the entry currently shown in the summary pane. nil until first load; set by
+    /// `defaultSelectedEntry` on appear + whenever the entry list changes (e.g. after a run finishes).
+    @State private var selectedRecipeId: String?
+    /// Confirmation presented before deleting a summary.
+    @State private var confirmDeleteRecipeId: String?
     private var pkg: TranscriptPackage? { store.transcript(for: meeting) }
 
     var body: some View {
@@ -29,7 +34,14 @@ struct MeetingDetailView: View {
             bodyArea.frame(maxWidth: .infinity, maxHeight: .infinity)
             if !isVideo, player != nil { Divider(); playbackBar }
         }
-        .onAppear(perform: configure).onDisappear(perform: teardown)
+        .onAppear {
+            configure()
+            syncSelectedEntry()
+        }
+        .onDisappear(perform: teardown)
+        // When entries change (a new summary finishes via .summaryDidFinish → store reloads), keep the
+        // selected id valid — defaultSelectedEntry will re-seat it or pick a new "done" entry.
+        .onChange(of: store.summaryEntries(for: meeting).map(\.id)) { syncSelectedEntry() }
         .alert("Name this speaker", isPresented: Binding(
             get: { renamingSpeakerId != nil }, set: { if !$0 { renamingSpeakerId = nil } })) {
             TextField("Name", text: $customName)
@@ -39,6 +51,25 @@ struct MeetingDetailView: View {
             }
             Button("Cancel", role: .cancel) { renamingSpeakerId = nil }
         }
+        .alert("Delete summary?", isPresented: Binding(
+            get: { confirmDeleteRecipeId != nil }, set: { if !$0 { confirmDeleteRecipeId = nil } })) {
+            Button("Delete", role: .destructive) {
+                if let id = confirmDeleteRecipeId {
+                    if selectedRecipeId == id { selectedRecipeId = nil }
+                    store.deleteSummary(meeting, recipeId: id)
+                }
+                confirmDeleteRecipeId = nil
+            }
+            Button("Cancel", role: .cancel) { confirmDeleteRecipeId = nil }
+        } message: {
+            Text("This removes the summary from your device. The copy on Drive (if any) is not affected.")
+        }
+    }
+
+    /// Keep `selectedRecipeId` in sync after the entry list changes.
+    private func syncSelectedEntry() {
+        let entries = store.summaryEntries(for: meeting)
+        selectedRecipeId = defaultSelectedEntry(current: selectedRecipeId, entries: entries)?.id
     }
 
     /// The split-pane body: a left context column (video + summary) beside the transcript. Collapses to
@@ -94,12 +125,10 @@ struct MeetingDetailView: View {
     }
 
     /// True when the summary pane has something to show (so the header toggle + the pane appear).
+    /// The pane is also shown on a `"transcribed"` meeting with no summaries yet — so the
+    /// "Summarize with…" empty-state CTA is reachable.
     private var summaryHasContent: Bool {
-        switch meeting.summaryState ?? "" {
-        case "running", "failed": return true
-        case "done": return store.summaryText(for: meeting) != nil
-        default: return meeting.status == "transcribed"
-        }
+        !store.summaryEntries(for: meeting).isEmpty || meeting.status == "transcribed"
     }
 
     /// A row of speaker chips above the transcript. Each chip is a menu to assign that diarized speaker a
@@ -134,55 +163,173 @@ struct MeetingDetailView: View {
         }
     }
 
-    /// The post-meeting Claude summary (saventa-summary auto-trigger), as a pane that fills its space:
-    /// spinner while running; the paste-ready note when done (Copy / Re-summarize); the error + Retry on
-    /// failure; or a Summarize button for a transcribed meeting that hasn't been summarized.
+    /// The multi-summary pane: a switcher across all summaries for this meeting, a per-meeting
+    /// "Summarize with…" run menu, and per-entry Copy / Re-run / Delete actions.
     @ViewBuilder private var summaryPane: some View {
+        let entries = store.summaryEntries(for: meeting)
+        let selected = entries.first(where: { $0.id == selectedRecipeId }) ?? entries.first
         VStack(alignment: .leading, spacing: 6) {
-            switch meeting.summaryState ?? "" {
-            case "running":
-                HStack(spacing: 8) {
-                    ProgressView().controlSize(.small)
-                    Text("Generating summary…").font(.callout).foregroundStyle(.secondary)
-                    Spacer()
-                }
-            case "done":
-                if let text = store.summaryText(for: meeting) {
-                    HStack {
-                        Label("Summary", systemImage: "sparkles").font(.headline)
-                        Spacer()
-                        Button { copySummary(text) } label: { Label("Copy", systemImage: "doc.on.doc") }
-                            .buttonStyle(.glass).controlSize(.small)
-                        Button { store.summarize(meeting) } label: {
-                            Label("Re-summarize", systemImage: "arrow.clockwise")
-                        }.buttonStyle(.glass).controlSize(.small)
-                    }
-                    ScrollView {
-                        Text(text).font(.system(.body, design: .monospaced)).textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                }
-            case "failed":
-                HStack(spacing: 8) {
-                    Image(systemName: "exclamationmark.triangle").foregroundStyle(.orange)
-                    Text(meeting.summaryError ?? "Summary failed.").font(.caption).foregroundStyle(.secondary)
-                    Spacer()
-                    Button("Retry") { store.summarize(meeting) }.buttonStyle(.glass).controlSize(.small)
-                }
-            default:
+            if entries.isEmpty {
+                // Empty state — transcribed meeting, no summaries yet.
                 if meeting.status == "transcribed" {
                     HStack(spacing: 8) {
                         Image(systemName: "sparkles").foregroundStyle(.secondary)
                         Text("No summary yet.").font(.callout).foregroundStyle(.secondary)
                         Spacer()
-                        Button { store.summarize(meeting) } label: { Label("Summarize", systemImage: "sparkles") }
-                            .buttonStyle(.glassProminent).controlSize(.small)
+                        summarizeMenu(label: "Summarize with…", prominent: true)
+                    }
+                }
+            } else {
+                // Top row: switcher + "Summarize with…" add menu + per-entry actions.
+                HStack(spacing: 6) {
+                    // Switcher — pick which summary to view.
+                    Menu {
+                        ForEach(entries) { entry in
+                            Button {
+                                selectedRecipeId = entry.id
+                            } label: {
+                                Label {
+                                    Text(entry.displayName)
+                                } icon: {
+                                    Image(systemName: stateGlyph(entry.state))
+                                }
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: stateGlyph(selected?.state ?? ""))
+                                .foregroundStyle(stateColor(selected?.state ?? ""))
+                            Text(selected?.displayName ?? "Summary").fontWeight(.medium)
+                            Image(systemName: "chevron.up.chevron.down").font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .menuStyle(.borderlessButton).fixedSize()
+
+                    Spacer()
+
+                    // Copy the selected summary (shown only when "done" and text is available).
+                    if let sel = selected, sel.state == "done",
+                       let text = store.summaryText(for: meeting, recipeId: sel.id) {
+                        Button { copySummary(text) } label: {
+                            Label("Copy", systemImage: "doc.on.doc")
+                        }.buttonStyle(.glass).controlSize(.small)
+                    }
+
+                    // Re-run the selected recipe.
+                    if let sel = selected {
+                        Button {
+                            store.summarize(meeting, recipeID: sel.id)
+                        } label: {
+                            Label("Re-run", systemImage: "arrow.clockwise")
+                        }.buttonStyle(.glass).controlSize(.small)
+                    }
+
+                    // Delete the selected summary.
+                    if let sel = selected {
+                        Button(role: .destructive) {
+                            confirmDeleteRecipeId = sel.id
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }.buttonStyle(.glass).controlSize(.small)
+                    }
+
+                    // "Summarize with…" — run an additional recipe.
+                    summarizeMenu(label: "＋", prominent: false)
+                }
+
+                Divider()
+
+                // Content area for the selected entry.
+                if let sel = selected {
+                    switch sel.state {
+                    case "running":
+                        HStack(spacing: 8) {
+                            ProgressView().controlSize(.small)
+                            Text("Generating summary…").font(.callout).foregroundStyle(.secondary)
+                            Spacer()
+                        }
+                        Spacer()
+                    case "failed":
+                        HStack(spacing: 8) {
+                            Image(systemName: "exclamationmark.triangle").foregroundStyle(.orange)
+                            Text(sel.error ?? "Summary failed.").font(.caption).foregroundStyle(.secondary)
+                            Spacer()
+                            Button("Retry") { store.summarize(meeting, recipeID: sel.id) }
+                                .buttonStyle(.glass).controlSize(.small)
+                        }
+                        Spacer()
+                    default:
+                        if let text = store.summaryText(for: meeting, recipeId: sel.id) {
+                            ScrollView {
+                                Text(text).font(.system(.body, design: .monospaced)).textSelection(.enabled)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        } else {
+                            Text("Summary text not found.").font(.callout).foregroundStyle(.secondary)
+                            Spacer()
+                        }
                     }
                 }
             }
         }
         .padding(.horizontal).padding(.vertical, 8)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    /// The "Summarize with…" dropdown menu. Lists all available recipes; picking one runs it for this
+    /// meeting (adding a new summary instead of overwriting).
+    @ViewBuilder private func summarizeMenu(label: String, prominent: Bool) -> some View {
+        let recipeList = store.recipes()
+        if recipeList.isEmpty {
+            // No recipes available — fall back to a plain button that runs the default.
+            if prominent {
+                Button {
+                    store.summarize(meeting)
+                } label: {
+                    Label(label, systemImage: "sparkles")
+                }.buttonStyle(.glassProminent).controlSize(.small)
+            } else {
+                Button {
+                    store.summarize(meeting)
+                } label: {
+                    Label(label, systemImage: "sparkles")
+                }.buttonStyle(.glass).controlSize(.small)
+            }
+        } else {
+            Menu {
+                ForEach(recipeList) { recipe in
+                    Button(recipe.displayName) {
+                        store.summarize(meeting, recipeID: recipe.id)
+                    }
+                }
+            } label: {
+                Label(label, systemImage: "sparkles")
+            }
+            .menuStyle(.borderlessButton)
+            .controlSize(.small)
+            .fixedSize()
+        }
+    }
+
+    /// SF Symbol for a summary state glyph in the switcher.
+    private func stateGlyph(_ state: String) -> String {
+        switch state {
+        case "done": return "checkmark.circle.fill"
+        case "running": return "arrow.trianglehead.2.clockwise"
+        case "failed": return "exclamationmark.triangle.fill"
+        default: return "circle"
+        }
+    }
+
+    /// Accent color for the state glyph.
+    private func stateColor(_ state: String) -> Color {
+        switch state {
+        case "done": return .green
+        case "running": return .accentColor
+        case "failed": return .orange
+        default: return .secondary
+        }
     }
 
     private var header: some View {
