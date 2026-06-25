@@ -1,10 +1,10 @@
-# IN-meetings build system  (macOS menu-bar app)
+# INV Meetings build system  (macOS menu-bar app)
 # Usage: make help
 
 # --- Configuration ---
 SCHEME          := INMeetings-App
-APP_NAME        := INMeetings.app
-PROC_NAME       := INMeetings
+APP_NAME        := INV Meetings.app
+PROC_NAME       := INV Meetings
 CONFIGURATION   := Debug
 DERIVED_DATA    := ./DerivedData
 APP_DIR         := Apps/INMeetings
@@ -27,7 +27,7 @@ $(PROJECT_PBXPROJ): $(PROJECT_YML)
 
 .PHONY: help
 help: ## Show all targets
-	@printf "$(GREEN)IN-meetings Build System$(NC)\n\n"
+	@printf "$(GREEN)INV Meetings Build System$(NC)\n\n"
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  $(YELLOW)%-12s$(NC) %s\n", $$1, $$2}'
 
@@ -89,7 +89,7 @@ verify-mac: build-mac ## Build + launch + confirm the menu-bar process is alive
 	@open "$(APP_PRODUCT)"
 	@sleep 3
 	@if pgrep -x "$(PROC_NAME)" >/dev/null 2>&1; then \
-		printf "$(GREEN)[verify]$(NC) $(PROC_NAME) is running (PID $$(pgrep -x $(PROC_NAME))).\n"; \
+		printf "$(GREEN)[verify]$(NC) $(PROC_NAME) is running (PID $$(pgrep -x '$(PROC_NAME)')).\n"; \
 		printf "$(GREEN)[verify]$(NC) Look for the waveform icon in the menu bar (no Dock icon = LSUIElement OK).\n"; \
 	else \
 		printf "$(RED)[verify]$(NC) $(PROC_NAME) is NOT running — likely crashed on launch.\n"; \

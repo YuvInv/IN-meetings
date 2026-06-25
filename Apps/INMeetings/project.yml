@@ -34,7 +34,7 @@ targets:
       - package: INMeetingsCore
     settings:
       base:
-        PRODUCT_NAME: INMeetings
+        PRODUCT_NAME: "INV Meetings"
         PRODUCT_BUNDLE_IDENTIFIER: com.in-venture.in-meetings
         INFOPLIST_FILE: INMeetings/Info.plist
         CODE_SIGN_ENTITLEMENTS: INMeetings/INMeetings.entitlements

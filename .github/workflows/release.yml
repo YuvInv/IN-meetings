@@ -96,7 +96,7 @@ jobs:
       - name: "[account-gated] Sign .app (Developer ID + Hardened Runtime)"
         if: env.HAS_CERT == 'true'
         run: |
-          APP_PATH="DerivedData/Build/Products/Release/INMeetings.app"
+          APP_PATH="DerivedData/Build/Products/Release/INV Meetings.app"
           # Sign frameworks/dylibs first, then the bundle (order matters — never --deep)
           find "$APP_PATH/Contents/Frameworks" \( -name "*.framework" -o -name "*.dylib" \) \
             -print0 | xargs -0 -I{} \
@@ -115,7 +115,7 @@ jobs:
           AC_KEY_ID:  ${{ secrets.AC_API_KEY_ID }}
           AC_ISSUER:  ${{ secrets.AC_API_KEY_ISSUER }}
         run: |
-          APP_PATH="DerivedData/Build/Products/Release/INMeetings.app"
+          APP_PATH="DerivedData/Build/Products/Release/INV Meetings.app"
           # Zip the .app for notarytool (staple back to the .app, not the zip)
           ditto -c -k --keepParent "$APP_PATH" /tmp/INMeetings-notarize.zip
           xcrun notarytool submit /tmp/INMeetings-notarize.zip \
@@ -132,7 +132,7 @@ jobs:
       - name: "[account-gated] Package .zip for Sparkle"
         if: env.HAS_CERT == 'true'
         run: |
-          APP_PATH="DerivedData/Build/Products/Release/INMeetings.app"
+          APP_PATH="DerivedData/Build/Products/Release/INV Meetings.app"
           ditto -c -k --keepParent "$APP_PATH" dist/INMeetings.zip
 
       # TODO(account): generate Sparkle appcast.xml and push to gh-pages
@@ -179,7 +179,7 @@ jobs:
             > **Unsigned internal build** — Gatekeeper will block direct double-click
             > on Macs that didn't build this. To open: right-click → Open, or:
             > ```
-            > xattr -dr com.apple.quarantine /Applications/INMeetings.app
+            > xattr -dr com.apple.quarantine "/Applications/INV Meetings.app"
             > ```
             > A signed + notarized build (no Gatekeeper prompt) requires the Apple
             > Developer account ($99/yr) — see `docs/distribution-setup.md`.

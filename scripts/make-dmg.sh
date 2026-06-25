@@ -9,17 +9,17 @@
 #
 # On the machine that built it, the .dmg has no quarantine flag, so it opens normally. If you copy the
 # .dmg to ANOTHER Mac (download / AirDrop), Gatekeeper will quarantine it — first launch then needs
-# right-click → Open, or:  xattr -dr com.apple.quarantine /Applications/INMeetings.app
+# right-click → Open, or:  xattr -dr com.apple.quarantine "/Applications/INV Meetings.app"
 #
 # Pass a RELEASE build: a Debug build uses Xcode's debug-dylib split (ENABLE_DEBUG_DYLIB) and isn't meant
 # to run outside DerivedData, so it may not launch from /Applications. `make dmg` builds Release for this.
 #
-# Usage: scripts/make-dmg.sh [path-to-INMeetings.app]   (defaults to the Release build product)
+# Usage: scripts/make-dmg.sh [path-to-"INV Meetings.app"]   (defaults to the Release build product)
 
 set -euo pipefail
 
-APP_PRODUCT="${1:-./DerivedData/Build/Products/Release/INMeetings.app}"
-VOL_NAME="IN Meetings"
+APP_PRODUCT="${1:-./DerivedData/Build/Products/Release/INV Meetings.app}"
+VOL_NAME="INV Meetings"
 OUT_DIR="dist"
 DMG_PATH="$OUT_DIR/INMeetings.dmg"
 
