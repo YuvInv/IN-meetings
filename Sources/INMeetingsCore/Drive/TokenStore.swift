@@ -45,7 +45,13 @@ public final class KeychainTokenStore: TokenStore, @unchecked Sendable {
     private var baseQuery: [String: Any] {
         [kSecClass as String: kSecClassGenericPassword,
          kSecAttrService as String: service,
-         kSecAttrAccount as String: account]
+         kSecAttrAccount as String: account,
+         // Use the modern data-protection keychain: the item is owned by the app's team-prefixed
+         // keychain-access-group (stable across binary renames/re-signs), not the login keychain's
+         // per-binary ACL — which rejected writes with errSecInvalidOwnerEdit (-25244) after a re-sign.
+         // With a single keychain-access-group entitlement, that group is used by default (no explicit
+         // kSecAttrAccessGroup needed), which also keeps this Core type free of the team prefix.
+         kSecUseDataProtectionKeychain as String: true]
     }
 
     public func load() -> DriveCredential? {

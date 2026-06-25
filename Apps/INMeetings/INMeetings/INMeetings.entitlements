@@ -11,5 +11,13 @@
 	<true/>
 	<key>com.apple.security.network.client</key>
 	<true/>
+	<!-- Keychain Services: store the Google credential in the data-protection keychain, owned by this
+	     team-prefixed access group (stable across binary renames / re-signs) instead of the login
+	     keychain's per-binary ACL — which rejected writes with errSecInvalidOwnerEdit (-25244) once the
+	     app was renamed / re-signed. Team A6C6D257QN. -->
+	<key>keychain-access-groups</key>
+	<array>
+		<string>A6C6D257QN.com.in-venture.in-meetings</string>
+	</array>
 </dict>
 </plist>
