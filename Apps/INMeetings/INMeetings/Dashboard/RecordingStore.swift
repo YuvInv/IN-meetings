@@ -104,15 +104,15 @@ final class RecordingStore {
     /// All available recipes (bundled + user-supplied) for the "Summarize with…" run menu.
     func recipes() -> [SummaryRecipe] { registry?.all() ?? [] }
 
-    /// Delete one recipe's summary: remove its DB row + its on-disk file, reload, and post
-    /// `.summaryDidFinish` so any open detail view refreshes immediately. Drive copy is left in place
-    /// (Drive deletion is out of scope for T3).
+    /// Delete one recipe's summary and re-establish a coherent post-delete state: remove its DB row + its
+    /// on-disk file, recompute the rollup (`meeting.summaryState`), and manage the `summary.md` mirror so
+    /// deleting the last summary doesn't leave a phantom legacy entry or a stuck Queue row (see
+    /// `reconcileAfterSummaryDelete`). Posting `.summaryDidFinish` reloads this store (the observer's
+    /// `load()`) and refreshes any open detail view. Drive copy is left in place (out of scope for T3).
     func deleteSummary(_ meeting: MeetingRecord, recipeId: String) {
-        try? store?.deleteSummary(meetingId: meeting.id, recipeId: recipeId)
-        let file = URL(fileURLWithPath: meeting.folderPath)
-            .appendingPathComponent("summaries/\(recipeId).md")
-        try? FileManager.default.removeItem(at: file)
-        load()
+        guard let store else { return }
+        try? reconcileAfterSummaryDelete(store: store, meetingId: meeting.id, recipeId: recipeId,
+                                         folder: URL(fileURLWithPath: meeting.folderPath))
         NotificationCenter.default.post(name: .summaryDidFinish, object: nil)
     }
 
