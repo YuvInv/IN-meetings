@@ -59,14 +59,14 @@ public final class JobBridge {
         let registry = recipeRegistry
         return SummaryRunner(
             store: store, resourcesURL: resources,
-            resolveResourcesURL: registry.map { reg in {
-                @Sendable () -> URL in
+            resolveActiveRecipe: registry.map { reg in {
+                @Sendable () -> SummaryRecipe? in
                 let id = SummaryRecipeSettings.activeRecipeID(.standard)
-                return reg.active(id: id)?.resourcesURL ?? resources
+                return reg.active(id: id)
             }},
             syncSummary: backup.map { b in
-                { @Sendable (id: String, folder: URL) in
-                    await b.syncSummaryIfConfigured(meetingID: id, packageFolder: folder)
+                { @Sendable (id: String, folder: URL, fileName: String) in
+                    await b.syncSummaryIfConfigured(meetingID: id, packageFolder: folder, fileName: fileName)
                 }
             })
     }()

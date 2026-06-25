@@ -37,13 +37,16 @@ final class SummaryRunnerTests: XCTestCase {
     }
 
     func testMakeArgumentsHasHeadlessFlags() {
-        let args = SummaryRunner.makeArguments(folder: URL(fileURLWithPath: "/tmp/m"), systemPrompt: "SYS-PROMPT")
+        let args = SummaryRunner.makeArguments(folder: URL(fileURLWithPath: "/tmp/m"),
+                                               relativeOutputPath: "summaries/saventa-summary.md",
+                                               systemPrompt: "SYS-PROMPT")
         XCTAssertEqual(args.first, "-p")
         XCTAssertTrue(args.contains("--append-system-prompt"))
         XCTAssertTrue(args.contains("SYS-PROMPT"))
         XCTAssertTrue(args.contains("--permission-mode"))
         XCTAssertTrue(args.contains("acceptEdits"))
         XCTAssertEqual(args.last, "json")               // --output-format json
+        XCTAssertTrue(args[1].contains("summaries/saventa-summary.md"))   // prompt names the per-recipe path
     }
 
     func testParseSessionID() {
@@ -76,20 +79,31 @@ final class SummaryRunnerTests: XCTestCase {
 
         let flag = Flag()
         let runner = SummaryRunner(
-            store: store, resourcesURL: resourcesURL,
+            store: store, resourcesURL: resourcesURL,   // fallback id = "saventa-summary"
             claudeURL: URL(fileURLWithPath: "/usr/bin/true"),   // bypass PATH resolution deterministically
-            syncSummary: { _, _ in await flag.set() },
+            syncSummary: { _, _, _ in await flag.set() },
             runProcessOverride: { _, folder, _ in
-                try? "**Team**\n>X".write(to: folder.appendingPathComponent("summary.md"),
+                // The runner creates `summaries/` and tells claude to write there; emulate that here.
+                try? "**Team**\n>X".write(to: folder.appendingPathComponent("summaries/saventa-summary.md"),
                                           atomically: true, encoding: .utf8)
                 return .init(exitCode: 0, stdout: #"{"type":"result","session_id":"sess-xyz"}"#)
             })
 
         await runner.run(meetingID: rec.id, folder: dir)
 
+        // Rollup (back-compat for the list + pre-T3 detail view).
         let row = try store.meeting(id: rec.id)
         XCTAssertEqual(row?.summaryState, "done")
         XCTAssertEqual(row?.summarySessionId, "sess-xyz")
+        // Per-recipe row.
+        let perRecipe = try store.summaries(forMeeting: rec.id)
+        XCTAssertEqual(perRecipe.count, 1)
+        XCTAssertEqual(perRecipe.first?.recipeId, "saventa-summary")
+        XCTAssertEqual(perRecipe.first?.state, "done")
+        XCTAssertEqual(perRecipe.first?.sessionId, "sess-xyz")
+        // Per-recipe file written + mirrored to summary.md (downstream skills + current UI).
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: dir.appendingPathComponent("summaries/saventa-summary.md").path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: dir.appendingPathComponent("summary.md").path))
         let synced = await flag.hit
         XCTAssertTrue(synced)
@@ -110,6 +124,10 @@ final class SummaryRunnerTests: XCTestCase {
         let row = try store.meeting(id: rec.id)
         XCTAssertEqual(row?.summaryState, "failed")
         XCTAssertNotNil(row?.summaryError)
+        // The per-recipe row is also "failed", and no summary.md mirror was written on failure.
+        let perRecipe = try store.summaries(forMeeting: rec.id)
+        XCTAssertEqual(perRecipe.first?.state, "failed")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: dir.appendingPathComponent("summary.md").path))
     }
 
     func testRunFailsOnNonZeroExit() async throws {
@@ -130,8 +148,10 @@ final class SummaryRunnerTests: XCTestCase {
     // MARK: - Recipe resolver + override seam (A2)
 
     func testMakeArgumentsPromptDoesNotContainSaventa() {
-        // The prompt must be recipe-agnostic (decision 3 of A2).
-        let args = SummaryRunner.makeArguments(folder: URL(fileURLWithPath: "/tmp/m"), systemPrompt: "SYS")
+        // The prompt must be recipe-agnostic (decision 3 of A2). The output path is the recipe id, but the
+        // bundled default ("saventa-summary") is replaced here with a neutral one to keep the assertion sharp.
+        let args = SummaryRunner.makeArguments(folder: URL(fileURLWithPath: "/tmp/m"),
+                                               relativeOutputPath: "summaries/short-brief.md", systemPrompt: "SYS")
         let prompt = args[1]   // second element is the -p prompt text
         XCTAssertFalse(prompt.lowercased().contains("saventa"),
                        "makeArguments prompt should be recipe-agnostic, not mention Saventa")
@@ -180,7 +200,7 @@ final class SummaryRunnerTests: XCTestCase {
                 if let idx = args.firstIndex(of: "--append-system-prompt"), idx + 1 < args.count {
                     await captured.set(args[idx + 1])
                 }
-                try? "# summary".write(to: folder.appendingPathComponent("summary.md"),
+                try? "# summary".write(to: folder.appendingPathComponent("summaries/override.md"),
                                        atomically: true, encoding: .utf8)
                 return .init(exitCode: 0, stdout: #"{"session_id":"s1"}"#)
             })
@@ -192,10 +212,14 @@ final class SummaryRunnerTests: XCTestCase {
                       "runner should have assembled the prompt from the override recipe dir")
         XCTAssertFalse(capturedSystemPrompt.contains("Funding"),
                        "saventa-summary content must not leak into the override run")
+        // The override recipe's file is written under its own id.
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: dir.appendingPathComponent("summaries/override.md").path))
+        XCTAssertEqual(try store.summaries(forMeeting: rec.id).first?.recipeId, "override")
     }
 
-    func testRunUsesResolveResourcesURLClosure() async throws {
-        // Verify that the `resolveResourcesURL` closure is used when no per-run override is given.
+    func testRunUsesResolveActiveRecipeClosure() async throws {
+        // Verify the `resolveActiveRecipe` closure is used when no per-run override is given.
         let dir = try tempCopyOfGolden()
         defer { try? FileManager.default.removeItem(at: dir) }
 
@@ -205,21 +229,22 @@ final class SummaryRunnerTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: resolveRoot) }
         try "# RESOLVED RECIPE CONTENT".write(
             to: resolveRoot.appendingPathComponent("recipe.md"), atomically: true, encoding: .utf8)
+        let resolved = SummaryRecipe(id: "resolved", displayName: "Resolved",
+                                     resourcesURL: resolveRoot, isBuiltIn: false)
 
         let store = try MeetingStore()
         let rec = try store.indexPackage(at: dir)
 
         let captured = Captured()
-        let resolveURL = resolveRoot
         let runner = SummaryRunner(
             store: store, resourcesURL: resourcesURL,   // init-time dir = saventa-summary (fallback)
             claudeURL: URL(fileURLWithPath: "/usr/bin/true"),
-            resolveResourcesURL: { resolveURL },         // resolver returns the distinctive dir
+            resolveActiveRecipe: { resolved },           // resolver returns the distinctive recipe
             runProcessOverride: { args, folder, _ in
                 if let idx = args.firstIndex(of: "--append-system-prompt"), idx + 1 < args.count {
                     await captured.set(args[idx + 1])
                 }
-                try? "# summary".write(to: folder.appendingPathComponent("summary.md"),
+                try? "# summary".write(to: folder.appendingPathComponent("summaries/resolved.md"),
                                        atomically: true, encoding: .utf8)
                 return .init(exitCode: 0, stdout: #"{"session_id":"s2"}"#)
             })
@@ -228,7 +253,141 @@ final class SummaryRunnerTests: XCTestCase {
         let capturedSystemPrompt = await captured.value
 
         XCTAssertTrue(capturedSystemPrompt.contains("RESOLVED RECIPE CONTENT"),
-                      "runner should have used the resolveResourcesURL closure")
+                      "runner should have used the resolveActiveRecipe closure")
+        XCTAssertEqual(try store.summaries(forMeeting: rec.id).first?.recipeId, "resolved")
+    }
+
+    // MARK: - Multiple summaries per meeting (T2)
+
+    /// Stub that writes the per-recipe file under whatever `summaries/<id>.md` path the runner's prompt names,
+    /// so a test doesn't have to hard-code the recipe id. Returns the given session id.
+    private func writeNamedSummaryStub(session: String)
+    -> (@Sendable ([String], URL, URL) async -> SummaryRunner.ProcessOutcome) {
+        { args, folder, _ in
+            // Extract the `summaries/<id>.md` path from the -p prompt (args[1]).
+            let prompt = args.count > 1 ? args[1] : ""
+            if let range = prompt.range(of: #"summaries/[^\s]+\.md"#, options: .regularExpression) {
+                let rel = String(prompt[range])
+                try? "# summary \(session)".write(to: folder.appendingPathComponent(rel),
+                                                  atomically: true, encoding: .utf8)
+            }
+            return .init(exitCode: 0, stdout: "{\"session_id\":\"\(session)\"}")
+        }
+    }
+
+    func testTwoDifferentRecipesProduceTwoFilesAndRowsNoOverwrite() async throws {
+        let dir = try tempCopyOfGolden()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = try MeetingStore()
+        let rec = try store.indexPackage(at: dir)
+        let saventa = try makeTempRecipe("saventa-summary")
+        let shortBrief = try makeTempRecipe("short-brief")
+
+        let runner = SummaryRunner(
+            store: store, resourcesURL: resourcesURL,
+            claudeURL: URL(fileURLWithPath: "/usr/bin/true"),
+            runProcessOverride: writeNamedSummaryStub(session: "s"))
+
+        await runner.run(meetingID: rec.id, folder: dir, recipeOverride: saventa)
+        await runner.run(meetingID: rec.id, folder: dir, recipeOverride: shortBrief)
+
+        // Two distinct per-recipe files coexist (neither overwrote the other).
+        let fm = FileManager.default
+        XCTAssertTrue(fm.fileExists(atPath: dir.appendingPathComponent("summaries/saventa-summary.md").path))
+        XCTAssertTrue(fm.fileExists(atPath: dir.appendingPathComponent("summaries/short-brief.md").path))
+        // Two per-recipe rows.
+        let rows = try store.summaries(forMeeting: rec.id)
+        XCTAssertEqual(Set(rows.map(\.recipeId)), ["saventa-summary", "short-brief"])
+        XCTAssertTrue(rows.allSatisfy { $0.state == "done" })
+        // Rollup reflects the latest run.
+        XCTAssertEqual(try store.meeting(id: rec.id)?.summaryState, "done")
+    }
+
+    /// Build a throwaway recipe dir with a distinct id (a temp dir + a `recipe.md`).
+    private func makeTempRecipe(_ id: String) throws -> SummaryRecipe {
+        let root = URL(filePath: NSTemporaryDirectory()).appending(path: "rcp-\(id)-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try "# \(id) recipe".write(to: root.appendingPathComponent("recipe.md"), atomically: true, encoding: .utf8)
+        return SummaryRecipe(id: id, displayName: id, resourcesURL: root, isBuiltIn: false)
+    }
+
+    /// A gated stub: waits on `gate` before returning, writing the per-recipe file the prompt names.
+    private func gatedStub(_ gate: Gate)
+    -> (@Sendable ([String], URL, URL) async -> SummaryRunner.ProcessOutcome) {
+        { args, folder, _ in
+            await gate.wait()
+            let prompt = args.count > 1 ? args[1] : ""
+            if let range = prompt.range(of: #"summaries/[^\s]+\.md"#, options: .regularExpression) {
+                try? "# x".write(to: folder.appendingPathComponent(String(prompt[range])),
+                                 atomically: true, encoding: .utf8)
+            }
+            return .init(exitCode: 0, stdout: "{\"session_id\":\"s\"}")
+        }
+    }
+
+    func testSameRecipeOnOneMeetingIsInFlightGuarded() async throws {
+        let dir = try tempCopyOfGolden()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = try MeetingStore()
+        let rec = try store.indexPackage(at: dir)
+        let same = try makeTempRecipe("saventa-summary")
+
+        let gate = Gate()
+        let runner = SummaryRunner(
+            store: store, resourcesURL: resourcesURL,
+            claudeURL: URL(fileURLWithPath: "/usr/bin/true"),
+            runProcessOverride: gatedStub(gate))
+
+        // Two concurrent runs of the SAME recipe overlap; the second must be guarded out.
+        async let r1: Void = runner.run(meetingID: rec.id, folder: dir, recipeOverride: same)
+        async let r2: Void = runner.run(meetingID: rec.id, folder: dir, recipeOverride: same)
+        try await Task.sleep(nanoseconds: 50_000_000)   // let both attempt to claim
+        await gate.open()
+        _ = await r1; _ = await r2
+
+        XCTAssertEqual(try store.summaries(forMeeting: rec.id)
+            .filter { $0.recipeId == "saventa-summary" }.count, 1)   // one row → no double run
+    }
+
+    func testDifferentRecipesOnOneMeetingBothRunConcurrently() async throws {
+        let dir = try tempCopyOfGolden()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = try MeetingStore()
+        let rec = try store.indexPackage(at: dir)
+        let a = try makeTempRecipe("brief-a")
+        let b = try makeTempRecipe("brief-b")
+
+        let gate = Gate()
+        let runner = SummaryRunner(
+            store: store, resourcesURL: resourcesURL,
+            claudeURL: URL(fileURLWithPath: "/usr/bin/true"),
+            runProcessOverride: gatedStub(gate))
+
+        // Two concurrent runs of DIFFERENT recipes overlap; both must proceed (per-recipe guard).
+        async let ra: Void = runner.run(meetingID: rec.id, folder: dir, recipeOverride: a)
+        async let rb: Void = runner.run(meetingID: rec.id, folder: dir, recipeOverride: b)
+        try await Task.sleep(nanoseconds: 50_000_000)
+        await gate.open()
+        _ = await ra; _ = await rb
+
+        let ids = Set(try store.summaries(forMeeting: rec.id).map(\.recipeId))
+        XCTAssertTrue(ids.isSuperset(of: ["brief-a", "brief-b"]),
+                      "different recipes on one meeting must both run (per-recipe guard)")
+    }
+}
+
+/// A one-shot gate so a stubbed process can be made to overlap with another in-flight run.
+private actor Gate {
+    private var opened = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+    func wait() async {
+        if opened { return }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+    func open() {
+        opened = true
+        for w in waiters { w.resume() }
+        waiters.removeAll()
     }
 }
 

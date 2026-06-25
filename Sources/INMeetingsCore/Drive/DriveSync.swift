@@ -113,17 +113,23 @@ public final class DriveSync: @unchecked Sendable {
         return DriveSyncResult(meetingFolderID: meetingFolderID, uploaded: uploaded)
     }
 
-    /// Re-upload just `summary.md` to a meeting's existing Drive folder — used after the saventa-summary
-    /// auto-trigger writes it (the main package was already synced when the pipeline finished). No-op if
-    /// the meeting was never synced (no folder id) or `summary.md` is absent. Idempotent
-    /// (`uploadOrReplaceFile` replaces an existing copy), so a re-summarize cleanly overwrites.
+    /// Re-upload one summary file to a meeting's existing Drive folder — used after a recipe run writes it
+    /// (the main package was already synced when the pipeline finished). `fileName` defaults to `summary.md`
+    /// (the mirror of the latest summary, back-compat) but can be a per-recipe `summaries/<recipeId>.md`
+    /// subpath; the Drive upload name is the leaf component, so a subpath is **flattened** into the meeting's
+    /// Drive folder (the folder already namespaces it — no Drive subfolder round-trip). No-op if the meeting
+    /// was never synced (no folder id) or the file is absent. Idempotent (`uploadOrReplaceFile` replaces an
+    /// existing copy), so a re-summarize cleanly overwrites.
     @discardableResult
-    public func syncSummary(meetingID: String, packageFolder: URL, into location: DriveLocation) async throws -> Bool {
+    public func syncSummary(meetingID: String, packageFolder: URL,
+                            fileName: String = "summary.md",
+                            into location: DriveLocation) async throws -> Bool {
         guard let record = try store.meeting(id: meetingID), let folderID = record.driveFolderId else { return false }
-        let url = packageFolder.appendingPathComponent("summary.md")
+        let url = packageFolder.appendingPathComponent(fileName)
         guard let data = try? Data(contentsOf: url) else { return false }
+        let driveName = url.lastPathComponent   // flatten any `summaries/<id>.md` subpath to its leaf
         _ = try await client.uploadOrReplaceFile(
-            name: "summary.md", mimeType: Self.mimeType(for: "summary.md"),
+            name: driveName, mimeType: Self.mimeType(for: driveName),
             data: data, parentID: folderID, driveId: location.driveID)
         return true
     }

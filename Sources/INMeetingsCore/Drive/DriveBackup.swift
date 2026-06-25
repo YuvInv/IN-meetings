@@ -45,13 +45,17 @@ public final class DriveBackup: @unchecked Sendable {
         }
     }
 
-    /// Re-upload just `summary.md` after the saventa-summary auto-trigger writes it (the main package was
-    /// already synced when the pipeline finished). No-op until Drive is configured; best-effort.
-    public func syncSummaryIfConfigured(meetingID: String, packageFolder: URL) async {
+    /// Re-upload one summary file after a recipe run writes it (the main package was already synced when the
+    /// pipeline finished). `fileName` defaults to `summary.md` (the latest-summary mirror); a per-recipe
+    /// `summaries/<recipeId>.md` syncs too (flattened to its leaf in the meeting's Drive folder). No-op until
+    /// Drive is configured; best-effort.
+    public func syncSummaryIfConfigured(meetingID: String, packageFolder: URL,
+                                        fileName: String = "summary.md") async {
         guard tokenStore.load() != nil, let location = locationStore.load() else { return }
         do {
-            if try await sync.syncSummary(meetingID: meetingID, packageFolder: packageFolder, into: location) {
-                driveLog.notice("drive summary \(meetingID, privacy: .public) uploaded")
+            if try await sync.syncSummary(meetingID: meetingID, packageFolder: packageFolder,
+                                          fileName: fileName, into: location) {
+                driveLog.notice("drive summary \(meetingID, privacy: .public) (\(fileName, privacy: .public)) uploaded")
             }
         } catch {
             driveLog.error("drive summary upload failed for \(meetingID, privacy: .public): \(error.localizedDescription, privacy: .public)")
