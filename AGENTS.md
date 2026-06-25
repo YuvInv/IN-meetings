@@ -1,4 +1,4 @@
-# IN-meetings — Agent Instructions
+# INV Meetings — Agent Instructions
 
 ## Environment
 - Primary agent: Claude Code (Anthropic, Opus model family)
@@ -40,7 +40,7 @@ The incoming agent reads `HANDOFF.md` and `DECISIONS.md` before starting work.
 
 ## Project
 
-**IN-meetings** — a no-bot, native macOS meeting recorder + Hebrew transcription pipeline for IN Venture (early-stage Israeli VC, ~5 users). Replaces Timeless. The edge is **context injection before transcription** (Google Calendar + Saventa CRM + Dealigence → ASR biasing vocabulary) and a per-meeting **context package** consumed by the existing Claude skill stack (`saventa-summary`, `generate-mom`, `enrich-company` at `~/repos/claude-skills/`).
+**INV Meetings** — a no-bot, native macOS meeting recorder + Hebrew transcription pipeline for IN Venture (early-stage Israeli VC, ~5 users). Replaces Timeless. The edge is **context injection before transcription** (Google Calendar + Saventa CRM + Dealigence → ASR biasing vocabulary) and a per-meeting **context package** consumed by the existing Claude skill stack (`saventa-summary`, `generate-mom`, `enrich-company` at `~/repos/claude-skills/`).
 
 Hard constraints (from the design brief, non-negotiable):
 - macOS native only, **no meeting bots**, invisible to other participants

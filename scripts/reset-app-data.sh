@@ -31,8 +31,8 @@ read -r ans
 [ "$ans" = "yes" ] || { echo "Aborted."; exit 1; }
 
 # Quit the app first so it doesn't re-write prefs on the way out.
-osascript -e 'tell application "INMeetings" to quit' >/dev/null 2>&1 || true
-pkill -x INMeetings >/dev/null 2>&1 || true
+osascript -e 'tell application "INV Meetings" to quit' >/dev/null 2>&1 || true
+pkill -x "INV Meetings" >/dev/null 2>&1 || true
 sleep 1
 
 tccutil reset All "$BUNDLE" >/dev/null 2>&1 || true

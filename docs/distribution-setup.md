@@ -28,7 +28,7 @@ launch-at-login behave differently from a DerivedData debug build).
 - **Not for distribution:** not notarized, not Developer-ID signed (it carries the Apple Development cert).
 - On the machine that built it, the `.dmg` has no quarantine flag and opens normally. Copied to **another**
   Mac (download/AirDrop), Gatekeeper quarantines it → first launch needs **right-click → Open** (or
-  `xattr -dr com.apple.quarantine /Applications/INMeetings.app`).
+  `xattr -dr com.apple.quarantine "/Applications/INV Meetings.app"`).
 - Usage: `make dmg` (builds Release + packages), then open `dist/INMeetings.dmg`, drag to Applications, launch
   from `/Applications`. `dist/` is git-ignored.
 - This does **not** replace the Ship steps below — it's a stopgap to test the installer UX before the paid

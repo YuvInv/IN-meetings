@@ -1,8 +1,8 @@
 # Saventa Summary — recipe (app-bundled)
 
 This is IN Venture's house recipe for turning **one** recorded meeting (a local context package on disk,
-produced by the IN-meetings recorder) into a super-short, plain-text deal summary in the exact Saventa
-template. It is bundled inside the IN-meetings app and runs **headlessly** — there is no Timeless URL, no
+produced by the INV Meetings recorder) into a super-short, plain-text deal summary in the exact Saventa
+template. It is bundled inside the INV Meetings app and runs **headlessly** — there is no Timeless URL, no
 network, no Calendar/Gmail, and no separate skill to load.
 
 **Your IN Venture house-style context — writing style, critical-analysis discipline, investment thesis,
@@ -16,7 +16,7 @@ nothing more.
 
 ## Input — a local meeting folder
 
-You are given a path to a meeting folder containing `transcript.json` and `metadata.json` (the IN-meetings
+You are given a path to a meeting folder containing `transcript.json` and `metadata.json` (the INV Meetings
 context package). Read them directly:
 
 - **`metadata.json`**:
@@ -87,7 +87,7 @@ read fine as a sentence.
 
 1. **Write the summary to `summary.md` in the meeting folder — this file is the deliverable.** Write the
    **exact template content** (the plain-text template only, **no** context/date line and **no** ``` fences)
-   to `<folder>/summary.md`. The IN-meetings app reads that file to show the summary in its dashboard and
+   to `<folder>/summary.md`. The INV Meetings app reads that file to show the summary in its dashboard and
    sync it to Google Drive.
 2. Also print the same summary inside a fenced code block in your reply, so a human watching the run sees it.
 3. **Do not reformat.** No re-bolding, no converting `*` to bullets, no markdown headings, no tidying the

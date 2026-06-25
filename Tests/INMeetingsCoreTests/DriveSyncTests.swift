@@ -41,12 +41,7 @@ final class DriveSyncTests: XCTestCase {
 
     private let location = DriveLocation(driveID: "0ASHAREDDRIVE", folderID: "BASE", displayName: "Test")
 
-    func testCompanyFolderNameFallsBackToUnmatched() throws {
-        let m = try PackageReader.metadata(in: goldenFixture)
-        XCTAssertEqual(DriveSync.companyFolderName(m), "Prelligence")
-    }
-
-    func testSyncBuildsCompanyFirstLayoutAndUploadsTextPackage() async throws {
+    func testSyncBuildsFlatMeetingFolderAndUploadsTranscript() async throws {
         let store = try MeetingStore()
         let record = try store.indexPackage(at: goldenFixture)
         let fake = FakeUploader()
@@ -54,9 +49,9 @@ final class DriveSyncTests: XCTestCase {
 
         let result = try await sync.sync(meetingID: record.id, packageFolder: goldenFixture, into: location)
 
-        XCTAssertEqual(fake.folderRequests, ["Prelligence", record.id])          // company, then meeting
-        XCTAssertEqual(Set(fake.uploadedNames), ["metadata.json", "transcript.json", "transcript.txt", "context.md"])
-        XCTAssertTrue(fake.resumableUploads.isEmpty)                             // the fixture has no recordings
+        XCTAssertEqual(fake.folderRequests, [record.id])                        // one flat timestamp folder, no company tier
+        XCTAssertEqual(Set(fake.uploadedNames), ["transcript.txt"])             // transcript only (summary.md absent from the fixture)
+        XCTAssertTrue(fake.resumableUploads.isEmpty)                            // the fixture has no recordings
         XCTAssertEqual(result.meetingFolderID, "folder:\(record.id)")
 
         let updated = try store.meeting(id: record.id)
@@ -83,8 +78,7 @@ final class DriveSyncTests: XCTestCase {
         _ = try await sync.sync(meetingID: record.id, packageFolder: dir, into: location)
 
         XCTAssertEqual(Set(fake.resumableUploads), ["mic.wav", "system.wav"])    // recordings → resumable
-        XCTAssertTrue(fake.uploadedNames.contains("transcript.txt"))            // readable transcript → one-shot
-        XCTAssertTrue(fake.uploadedNames.contains("metadata.json"))
+        XCTAssertEqual(Set(fake.uploadedNames), ["transcript.txt"])             // only the readable transcript → one-shot (no metadata mirror)
     }
 
     func testMediaSelectionPrefersMergedFile() throws {

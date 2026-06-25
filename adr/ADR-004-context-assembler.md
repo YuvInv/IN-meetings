@@ -8,8 +8,7 @@
 > **Amended 2026-06-14 (Phase 2 slice 1, calendar-first):** mechanism = deterministic post-correction
 > (not `initial_prompt`); runtime = **Swift fetch / Python transform** (not "the pipeline calls MCP
 > servers" — a headless subprocess can't reach MCP); calendar-first (Saventa/Dealigence = slice 2); the
-> internal/external split is derived from the signed-in account's domain. See `DECISIONS.md` 2026-06-14
-> and `docs/superpowers/specs/2026-06-14-phase2-calendar-context-design.md`.
+> internal/external split is derived from the signed-in account's domain. See `DECISIONS.md` 2026-06-14.
 
 ## Context
 

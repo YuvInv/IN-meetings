@@ -1,4 +1,4 @@
-# IN-meetings — Claude Code Memory
+# INV Meetings — Claude Code Memory
 
 ## Shared Instructions
 @AGENTS.md

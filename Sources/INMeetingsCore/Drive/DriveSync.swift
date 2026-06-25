@@ -16,10 +16,12 @@ public struct DriveSyncResult: Sendable {
     public let uploaded: [String]
 }
 
-/// Write-through sync of a finished meeting to Drive (ADR-006): resolve/create `<Company>/<meeting>/`
-/// under the user's chosen location, upload the transcript + metadata (one request each) and the
-/// recordings (streamed via a resumable session), then mark the index. Idempotent at the meeting level
-/// (skips an already-synced meeting).
+/// Write-through sync of a finished meeting to Drive (ADR-006, amended 2026-06-25): create a single
+/// folder named with the meeting timestamp directly under the user's chosen location, upload the
+/// transcript (one request) and the recording (streamed via a resumable session), then mark the index.
+/// `summary.md` lands later via `syncSummary` once a recipe runs. Idempotent at the meeting level
+/// (skips an already-synced meeting). The folder is a human-facing video+transcript+summary share, not a
+/// full context-package mirror (the complete package stays local for the on-device skills).
 public final class DriveSync: @unchecked Sendable {
     private let client: DriveUploading
     private let store: MeetingStore
@@ -29,10 +31,11 @@ public final class DriveSync: @unchecked Sendable {
         self.store = store
     }
 
-    /// Small text files — uploaded in one request each. `summary.md` is written *after* this sync runs
-    /// (the saventa-summary auto-trigger fires post-pipeline), so it's skipped here and re-uploaded by
-    /// `syncSummary`; listing it keeps any later full re-sync complete.
-    static let textFileNames = ["metadata.json", "transcript.json", "transcript.txt", "context.md", "slides_ocr.md", "summary.md"]
+    /// The human-facing text artifacts — uploaded in one request each. `summary.md` is written *after*
+    /// this sync runs (the summary auto-trigger fires post-pipeline), so it's skipped here by the
+    /// missing-file guard below and re-uploaded by `syncSummary`; listing it keeps any later full re-sync
+    /// complete.
+    static let textFileNames = ["transcript.txt", "summary.md"]
 
     /// The single merged playback artifact, preferred over the raw tracks. A video call muxes into
     /// `meeting.mp4` (video + audio = the whole experience); an audio meeting mixes into `audio.m4a`.
@@ -73,12 +76,6 @@ public final class DriveSync: @unchecked Sendable {
         return "text/plain"
     }
 
-    /// Company-first folder name; meetings with no matched company go under a shared `_Unmatched` bucket.
-    static func companyFolderName(_ metadata: MeetingMetadata) -> String {
-        if let name = metadata.company?.name, !name.isEmpty { return name }
-        return "_Unmatched"
-    }
-
     @discardableResult
     public func sync(meetingID: String, packageFolder: URL, into location: DriveLocation,
                      force: Bool = false) async throws -> DriveSyncResult {
@@ -87,11 +84,8 @@ public final class DriveSync: @unchecked Sendable {
             return DriveSyncResult(meetingFolderID: folderID, uploaded: [])
         }
 
-        let metadata = try PackageReader.metadata(in: packageFolder)
-        let companyID = try await client.findOrCreateFolder(
-            name: Self.companyFolderName(metadata), parentID: location.folderID, driveId: location.driveID)
         let meetingFolderID = try await client.findOrCreateFolder(
-            name: meetingID, parentID: companyID, driveId: location.driveID)
+            name: meetingID, parentID: location.folderID, driveId: location.driveID)
 
         var uploaded: [String] = []
         for name in Self.textFileNames {

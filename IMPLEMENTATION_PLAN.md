@@ -1,4 +1,4 @@
-# IMPLEMENTATION_PLAN — IN-Meetings
+# IMPLEMENTATION_PLAN — INV Meetings
 
 **Phase-3 deliverable.** Proposed repo structure, a phased delivery plan (MVP first), and the riskiest
 unknowns to prototype before committing to the full build. Backed by [`DESIGN.md`](DESIGN.md),
@@ -37,8 +37,9 @@ retention/size cap rides with it. Full rationale in `DECISIONS.md` (2026-06-15).
    Liquid Glass wizard: **Microphone → Screen & System Audio Recording → Google sign-in** (3 steps — macOS
    15/26 has no separate system-audio grant; DECISIONS 2026-06-22), every step skippable (single primary
    grant button + "Skip for now"; nothing blocks the dashboard), **restart at the end** for Screen Recording.
-   Pure Core `OnboardingChecklist` (tested) + app `OnboardingModel`/`OnboardingWindow`; auto-opens first run,
-   re-runnable from the menu ("Set up IN Meetings…"). Also added **model visibility + management** (wizard
+   Pure Core `OnboardingChecklist` (tested) + app `OnboardingModel`/`OnboardingWindow`; auto-opens first run
+   (re-run via `make reset-test-data`; the menu "Set up…" entry was later removed in the cleanup pass). Also
+   added **model visibility + management** (wizard
    download status; Settings → Models path/size/Reveal/Delete/Re-download) + the local test tooling
    (`make dmg`, `make reset-test-data`). (ADR-009.) Live-verified by Yuval.
 4. **Reliability pass (goal 1).** ✅ **DONE (PR #10):** Silero VAD bundled in the app + provisioned-from-
@@ -53,7 +54,7 @@ retention/size cap rides with it. Full rationale in `DECISIONS.md` (2026-06-15).
    globally-installed skill) → writes `summary.md` → dashboard "Summary" panel (running/done/failed +
    Copy/Retry/Summarize) + Drive sync. Auto-on-finish (file-only, safe) + a manual Summarize button.
    **Sevanta/CRM posting stays ON HOLD.** (ADR-008, amended.) ⏳ live-verify the panel + full flow on a real
-   call (`docs/manual-tests-saventa-summary.md`).
+   call.
 7. **Video (gap #5, BIG).** ✅ **DONE (PR #10 + the A/V rewrite in PR #11):** SCK capture → `meeting.mp4` →
    Drive → dashboard playback. The **A/V rewrite captures screen+system+mic via one SCK stream (one clock)**
    so the merge is synced by construction; **~6× smaller** (720p + passthrough mux). Added the Screen-Recording
@@ -69,8 +70,7 @@ retention/size cap rides with it. Full rationale in `DECISIONS.md` (2026-06-15).
     audio-process exit (the existing `CallDetector` signal — that answers the "research meeting-end" ask).
     Pure Core `AutoStopArbiter` (tick-driven, unit-tested) + app `MeetingEndCoordinator` + `MeetingEndOverlay`
     card; `autoStopEnabled` (default on). **Amends ADR-002**; **supersedes** the 2026-06-14 keep-if-ignored
-    choice (DECISIONS 2026-06-22). Core 100/100 + build green. ⏳ live-verify on a real call
-    (`docs/manual-tests-auto-stop.md`).
+    choice (DECISIONS 2026-06-22). Core 100/100 + build green. ⏳ live-verify on a real call.
 11. **Calendar-driven audio upload + context (MUST-HAVE — reshaped 2026-06-22, was "upload an audio file").**
     🟦 **NEXT — design brief written, not yet designed/built.** Make the audio-import feature "whole": a
     **right-side calendar panel** on the dashboard (after Google connect) → click a meeting → **upload an
@@ -78,12 +78,11 @@ retention/size cap rides with it. Full rationale in `DECISIONS.md` (2026-06-15).
     package and gives candidate identities for the diarized speakers (assisted speaker labelling; true
     voice-ID is a separate project). Single mixed track (no live dual-track), so diarization does all the
     separation. Reuses `CalendarClient`/`CalendarContext` + the synthetic-`job.json` import path + `SpeakerEditor`.
-    **Brief: `docs/superpowers/specs/2026-06-22-calendar-upload-context-brief.md`** — brainstorm → spec → build
-    next session.
+    Brainstorm → spec → build next session.
 12. **Modular / resizable meeting layout (2026-06-22).** 🟦 **NEXT (after #11) — design brief written.** Make
     the meeting detail panes — **video / summary / transcript** — resizable (and possibly collapsible). Today
     `MeetingDetailView` is a fixed `VStack`. Likely `HSplitView`/`VSplitView` with persisted sizes, adapting
-    when there's no video. **Brief: `docs/superpowers/specs/2026-06-22-modular-meeting-layout-brief.md`.**
+    when there's no video.
 
 ### v1 Breadth — A1…A6 + distribution + custom summaries (branch `feat/v1-breadth-features`, 2026-06-24/25)
 All build + Core 265/0 green; NOT yet pushed; live-verification pending with Yuval.

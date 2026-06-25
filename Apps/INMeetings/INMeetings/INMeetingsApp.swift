@@ -86,9 +86,7 @@ struct INMeetingsApp: App {
     var body: some Scene {
         MenuBarExtra {
             MenuContent(detector: detector, recorder: recorder, models: models,
-                        settings: promptSettings, coordinator: promptCoordinator,
-                        endCoordinator: endCoordinator, drive: drive, onboarding: onboarding,
-                        dictation: dictationSettings)
+                        settings: promptSettings, drive: drive, dictation: dictationSettings)
         } label: {
             MenuBarLabel(detector: detector, recorder: recorder)
         }
@@ -120,10 +118,7 @@ private struct MenuContent: View {
     var recorder: RecordingController
     var models: ModelManager
     var settings: MeetingDetectionSettings
-    var coordinator: MeetingPromptCoordinator
-    var endCoordinator: MeetingEndCoordinator
     var drive: DriveAuth
-    var onboarding: OnboardingModel
     var dictation: DictationSettings
     @Environment(\.openWindow) private var openWindow
 
@@ -133,11 +128,6 @@ private struct MenuContent: View {
             openWindow(id: "dashboard")
         }
         .keyboardShortcut("d")
-        Button("Set up INV Meetings…") {
-            onboarding.restart()
-            NSApp.activate(ignoringOtherApps: true)
-            openWindow(id: "onboarding")
-        }
         Divider()
 
         switch recorder.state {
@@ -172,14 +162,6 @@ private struct MenuContent: View {
             Button("Stop Recording") { recorder.stop() }
         }
 
-        if let diagnostic = recorder.lastDiagnostic, !recorder.isRecording {
-            Text(diagnostic)
-        }
-
-        if let phase = recorder.jobBridge.phase, !recorder.isRecording {
-            Text("Pipeline: \(phase)")
-        }
-
         if let error = recorder.lastError {
             Divider()
             Text("⚠️ \(error)")
@@ -206,11 +188,6 @@ private struct MenuContent: View {
         Toggle("Offer to stop when the call ends", isOn: Binding(
             get: { settings.autoStopEnabled },
             set: { settings.autoStopEnabled = $0 }))
-
-        #if DEBUG
-        Button("Preview record prompt (debug)") { coordinator.previewPrompt() }
-        Button("Preview meeting-ended countdown (debug)") { endCoordinator.previewCountdown() }
-        #endif
 
         Divider()
 
