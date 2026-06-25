@@ -18,7 +18,19 @@ public final class InMemoryTokenStore: TokenStore, @unchecked Sendable {
     public func clear() throws { credential = nil }
 }
 
-public enum KeychainError: Error { case unexpectedStatus(OSStatus) }
+public enum KeychainError: Error, LocalizedError {
+    case unexpectedStatus(OSStatus)
+
+    /// A human message (and the real `OSStatus`) instead of Swift's default "KeychainError error 0" — the
+    /// bare enum-ordinal rendering hides which keychain call failed and why.
+    public var errorDescription: String? {
+        switch self {
+        case .unexpectedStatus(let status):
+            let detail = SecCopyErrorMessageString(status, nil) as String?
+            return "Keychain error \(status)" + (detail.map { " — \($0)" } ?? "")
+        }
+    }
+}
 
 /// Keychain-backed store: one generic-password item holding the JSON-encoded credential.
 public final class KeychainTokenStore: TokenStore, @unchecked Sendable {

@@ -27,6 +27,7 @@ struct AppSettingsView: View {
                 .tabItem { Label("Summary", systemImage: "text.append") }
             ModelSettingsTab(model: models, vad: vadModels).tabItem { Label("Model", systemImage: "cube.box") }
             DriveSettingsTab(drive: drive).tabItem { Label("Drive", systemImage: "externaldrive") }
+            CalendarSettingsTab(drive: drive).tabItem { Label("Calendar", systemImage: "calendar") }
         }
         .frame(width: 540, height: 480).padding(20)
     }
