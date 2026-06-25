@@ -174,6 +174,51 @@ final class DriveSyncTests: XCTestCase {
         XCTAssertTrue(fake.uploadedNames.isEmpty)            // no full re-sync, just the one file
     }
 
+    func testSyncSummaryUploadsNamedPerRecipeFileFlattened() async throws {
+        // The generalized `syncSummary(fileName:)` uploads any named summary file (per-recipe support).
+        // A `summaries/<recipeId>.md` subpath is flattened to `<recipeId>.md` in the meeting's Drive folder.
+        let store = try MeetingStore()
+        let fake = FakeUploader()
+        let sync = DriveSync(client: fake, store: store)
+
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("perrecipe-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try FileManager.default.copyItem(at: goldenFixture.appendingPathComponent("metadata.json"),
+                                         to: dir.appendingPathComponent("metadata.json"))
+        let record = try store.indexPackage(at: dir)
+        let summariesDir = dir.appendingPathComponent("summaries")
+        try FileManager.default.createDirectory(at: summariesDir, withIntermediateDirectories: true)
+        try "# short brief".write(to: summariesDir.appendingPathComponent("short-brief.md"),
+                                  atomically: true, encoding: .utf8)
+        try store.setSyncState(id: record.id, driveFolderId: "folder:meeting", syncState: "synced")
+
+        let ok = try await sync.syncSummary(meetingID: record.id, packageFolder: dir,
+                                            fileName: "summaries/short-brief.md", into: location)
+        XCTAssertTrue(ok)
+        XCTAssertEqual(fake.replacedNames, ["short-brief.md"])   // subpath flattened to the leaf name
+    }
+
+    func testSyncSummaryDefaultsToSummaryMarkdown() async throws {
+        // The default `fileName` is "summary.md" — back-compat with the existing single-summary callers.
+        let store = try MeetingStore()
+        let fake = FakeUploader()
+        let sync = DriveSync(client: fake, store: store)
+
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("default-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try FileManager.default.copyItem(at: goldenFixture.appendingPathComponent("metadata.json"),
+                                         to: dir.appendingPathComponent("metadata.json"))
+        let record = try store.indexPackage(at: dir)
+        try "**Team**".write(to: dir.appendingPathComponent("summary.md"), atomically: true, encoding: .utf8)
+        try store.setSyncState(id: record.id, driveFolderId: "folder:meeting", syncState: "synced")
+
+        let ok = try await sync.syncSummary(meetingID: record.id, packageFolder: dir, into: location)
+        XCTAssertTrue(ok)
+        XCTAssertEqual(fake.replacedNames, ["summary.md"])       // default leaf name
+    }
+
     func testSyncIsIdempotentOnceSynced() async throws {
         let store = try MeetingStore()
         let record = try store.indexPackage(at: goldenFixture)

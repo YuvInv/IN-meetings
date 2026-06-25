@@ -20,17 +20,28 @@ struct INMeetingsApp: App {
     @State private var vadModel: ModelManager
     @State private var promptSettings: MeetingDetectionSettings
     @State private var captureSettings: CaptureSettings
+    @State private var audioDeviceSettings: AudioDeviceSettings
     @State private var promptCoordinator: MeetingPromptCoordinator
     @State private var endCoordinator: MeetingEndCoordinator
     @State private var drive: DriveAuth
     @State private var onboarding: OnboardingModel
+    @State private var recipeSettings: SummaryRecipeSettings
+    /// Bundled + user recipe registry; rebuilt from the app bundle's `skills/` folder reference.
+    @State private var recipeRegistry: SummaryRecipeRegistry
+    @State private var dictationSettings: DictationSettings
+    @State private var dictationController: DictationController
+    @State private var dictationOverlay: DictationOverlayCoordinator
+    private let launchAtLogin: SystemLaunchAtLogin = SystemLaunchAtLogin()
 
     init() {
         let detector = CallDetector()
         _detector = State(initialValue: detector)
         let captureSettings = CaptureSettings()
         _captureSettings = State(initialValue: captureSettings)
-        let recorder = RecordingController(detector: detector, captureSettings: captureSettings)
+        let audioDeviceSettings = AudioDeviceSettings()
+        _audioDeviceSettings = State(initialValue: audioDeviceSettings)
+        let recorder = RecordingController(detector: detector, captureSettings: captureSettings,
+                                           audioDeviceSettings: audioDeviceSettings)
         _recorder = State(initialValue: recorder)
         let models = ModelManager()
         _models = State(initialValue: models)
@@ -49,13 +60,35 @@ struct INMeetingsApp: App {
         let drive = DriveAuth()
         _drive = State(initialValue: drive)
         _onboarding = State(initialValue: OnboardingModel(drive: drive, models: models))
+        _recipeSettings = State(initialValue: SummaryRecipeSettings())
+        // Build the recipe registry from the bundled `skills/` folder. On first run (before the
+        // xcodeproj is generated), `bundledRecipesRootURL()` may return nil; fall back to an empty
+        // temp root so the Settings UI still renders without crashing.
+        let bundledRoot = JobBridge.bundledRecipesRootURL()
+            ?? URL(filePath: NSTemporaryDirectory()).appendingPathComponent("skills-empty-\(UUID().uuidString)")
+        _recipeRegistry = State(initialValue: SummaryRecipeRegistry(bundledRoot: bundledRoot))
+
+        // Global-hotkey on-device dictation (A6) — opt-in, default OFF. The transcriber calls whisper-cli
+        // directly against the installed Hebrew model (low latency, no pipeline). Register the hotkeys now
+        // iff already enabled from a previous launch.
+        let dictationSettings = DictationSettings()
+        _dictationSettings = State(initialValue: dictationSettings)
+        let dictationController = DictationController(
+            settings: dictationSettings,
+            transcriber: WhisperCliTranscriber(model: ModelManager.installedModelURL))
+        _dictationController = State(initialValue: dictationController)
+        dictationController.refreshHotKeys()
+        let dictationOverlay = DictationOverlayCoordinator(controller: dictationController)
+        _dictationOverlay = State(initialValue: dictationOverlay)
+        dictationOverlay.start()   // float the dictation status pill while a clip is active
     }
 
     var body: some Scene {
         MenuBarExtra {
             MenuContent(detector: detector, recorder: recorder, models: models,
                         settings: promptSettings, coordinator: promptCoordinator,
-                        endCoordinator: endCoordinator, drive: drive, onboarding: onboarding)
+                        endCoordinator: endCoordinator, drive: drive, onboarding: onboarding,
+                        dictation: dictationSettings)
         } label: {
             MenuBarLabel(detector: detector, recorder: recorder)
         }
@@ -73,8 +106,11 @@ struct INMeetingsApp: App {
         .defaultPosition(.center)
 
         Settings {
-            AppSettingsView(settings: promptSettings, models: models, vadModels: vadModel,
-                            drive: drive, capture: captureSettings)
+            AppSettingsView(launchAtLogin: launchAtLogin, settings: promptSettings, models: models,
+                            vadModels: vadModel, drive: drive, capture: captureSettings,
+                            audio: audioDeviceSettings, recipeSettings: recipeSettings,
+                            recipeRegistry: recipeRegistry, dictation: dictationSettings,
+                            dictationController: dictationController)
         }
     }
 }
@@ -88,6 +124,7 @@ private struct MenuContent: View {
     var endCoordinator: MeetingEndCoordinator
     var drive: DriveAuth
     var onboarding: OnboardingModel
+    var dictation: DictationSettings
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
@@ -156,6 +193,9 @@ private struct MenuContent: View {
         Divider()
 
         Text("⌃⌥⌘R toggles recording")
+        if dictation.enabled {
+            Text("\(DictationSettingsTab.chordString(keyCode: dictation.heKeyCode, modifiers: dictation.heModifiers)) / \(DictationSettingsTab.chordString(keyCode: dictation.enKeyCode, modifiers: dictation.enModifiers)) dictate (Hebrew / English)")
+        }
 
         Toggle("Prompt to record detected calls", isOn: Binding(
             get: { settings.promptEnabled },

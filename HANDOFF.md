@@ -6,80 +6,77 @@ Keep it short: last state, next steps, gotchas. History lives in git log.
 -->
 
 ## Outgoing Agent
-Claude Code · 2026-06-23 (modular/resizable meeting layout session)
+Claude Code · 2026-06-24 (v1 breadth features session)
 
 ## Current State
-**Road-to-v1 nearly complete; `main` is at the PR #14 merge.** End-to-end: detect → dual-track capture →
-on-device Hebrew transcription (post-correction + Silero VAD) → senko diarization → frozen-schema context
-package + SQLite index → per-user Drive backup → Liquid Glass dashboard (browse / play `meeting.mp4`/`audio.m4a`
-/ read RTL transcript) + tabbed Settings + a first-run onboarding wizard.
+**Branch `feat/v1-breadth-features` implements the 5 v1 breadth features + distribution pipeline +
+summary-pane bugfix + custom summaries.** All build + unit-test + code-review green: **Core 265/0**,
+`make build-mac` SUCCEEDED. **NOT yet pushed to remote.**
 
-**Merged to `main` this session (2026-06-22):**
-- **[PR #12] saventa-summary auto-trigger** — call done → headless `claude -p` + app-bundled recipe →
-  `summary.md` → dashboard Summary panel + Drive. **Sevanta/CRM posting ON HOLD.**
-- **[PR #13] auto-stop on meeting end** — debounced visible countdown on the detector's **armed→idle** edge
-  (`AutoStopArbiter` + `MeetingEndCoordinator`/`Overlay`; `autoStopEnabled` default on; amends ADR-002,
-  supersedes the 2026-06-14 keep-if-ignored choice).
-- **[PR #14] onboarding/TCC wizard (live-verified)** — 3-step **Mic → Screen & System Audio Recording →
-  Google**; single-primary grant button + "Skip for now"; auto-opens first run, re-runnable from the menu.
-  Plus **model visibility + management** (wizard download status; Settings → Models path/size/Reveal/Delete/
-  Re-download) **and folded-in local test tooling** (`make dmg`, `make reset-test-data`).
+**What's on this branch (full):**
+- **A1–A6 + DIST**: audio device picker, summary recipe registry, queue view, launch-at-login + version,
+  dictation (on-device hotkey), unsigned-DMG distribution pipeline (see DECISIONS 2026-06-24).
+- **Summary-pane bugfix** (`ee095c2`): `showSummaryPane` changed `@AppStorage` → `@State` so collapsing
+  the pane on one meeting doesn't hide it globally (see DECISIONS 2026-06-25 first entry).
+- **Custom summaries** (3 tasks, see DECISIONS 2026-06-25 second entry):
+  - **In-app recipe editor**: Settings → Summary create/edit/delete sheet; saved to
+    `~/Library/Application Support/IN Meetings/Recipes/<slug>/recipe.md` + `name.txt`.
+  - **Multiple summaries per meeting**: per-recipe `summaries/<recipeId>.md` + `summary.md` mirror;
+    migration v5 `meetingSummary` table; `SummaryRunner` writes per-recipe with per-(meeting,recipe)
+    in-flight guard + rollup update; Drive syncs per-recipe files.
+  - **Meeting-page UI**: summary switcher across a meeting's recipes + "Summarize with… ▾" per-meeting
+    menu + Copy/Re-run/Delete per summary; `SummaryReconcile` deletes cleanly (no phantom entries,
+    Queue never stuck).
 
-**Load-bearing finding (DECISIONS 2026-06-22):** macOS 15/26 has **no separate "System Audio Recording"
-grant** — system audio is covered by **"Screen & System Audio Recording"** (confirmed empirically: the
-Core-Audio-tap "Them" track records with only Screen Recording granted). So onboarding is 3 steps.
+Live-verification pending with Yuval (real device / real recording / dictation AX grant /
+launch-at-login post-install / queue view on a real call / **custom summaries: create a recipe, run two
+recipes on one meeting, switch/Copy/Re-run/Delete**).
 
-Earlier on `main`: hybrid app shell (PR #8), company naming (#9), reliability/VAD + call video + Drive picker
-(#10/#11), A/V-sync rewrite + ~6× smaller files + speaker naming (#11).
+`main` is at the PR #19 merge (rename INV Meetings). The breadth branch was cut from the post-rename `main`.
+
+**What's on this branch:**
+- **A1** — Settings → Audio tab: input-device picker (CoreAudio UID enumeration) + live level meter +
+  adaptive gain (default OFF — mic is the ASR source of truth).
+- **A2** — Summary recipe registry: bundled `Resources/skills/*` + user `~/Library/…/Recipes/*`; active
+  recipe off-main `UserDefaults`; `makeArguments` recipe-agnostic; 2nd bundled `brief-summary` recipe.
+  Settings → Summary tab (autoSummary toggle moved here).
+- **A3** — Queue / Processing dashboard view: `JobBridge` now surfaces `progress` + `activeMeetingID`;
+  live progress via computed `QueueModel.items` in SwiftUI body; per-phase labels, progress bar,
+  Reveal-pipeline.log + Retry. Pure `QueuePhase.derive` unit-tested in Core.
+- **A4** — Settings → General: launch-at-login (`SMAppService.mainApp` behind `LaunchAtLoginManaging`
+  protocol) + app version. Sparkle update-check UI deliberately NOT shipped (dead no-op pre-account;
+  inert seams only).
+- **A6** — Global-hotkey on-device dictation → paste-at-cursor. `whisper-cli` direct (not pipeline) for
+  latency; toggle semantics; He ⌃⌥⌘D / En ⌃⌥⌘E; AX grant contextual (not onboarding gate); default
+  OFF; non-activating NSPanel overlay; 30s spawn watchdog.
+- **DIST** — `.github/workflows/release.yml` (unsigned `.dmg` → GitHub Releases on `v*` tag, works NOW
+  with no Apple account); `docs/appcast.xml` template; "Release hosting + auto-update" section in
+  `docs/distribution-setup.md`. Architecture: GitHub Releases + GitHub Pages + Sparkle 2 (EdDSA).
+  Account-gated steps activate when the $99 Developer account secrets are provisioned.
 
 ## Next — START HERE
 
-**✅ DONE this session (2026-06-23) → [PR #17](https://github.com/YuvInv/IN-meetings/pull/17), branch
-`feat/calendar-upload-context` (⏳ live-verify + merge): feature #1 below — calendar-driven audio upload +
-context.** A right-side **day-agenda inspector** (`CalendarPanel` + Core `CalendarPanelModel`) → page days /
-⟳ refresh → pick an event → **upload a recording bound to it** → the event's attendees/company/time enrich a
-**single-track** (`profile:"inPerson"`) Hebrew transcription, and the attendees become **one-tap speaker
-labels** (existing chips — no detail-view change). No-event footer fallback; "✓ recorded" markers; **Imported**
-badge. Pipeline reused **unchanged** via a `context.input.json` **pinned to the chosen event** + provenance in
-`job.json` (`source:"imported"`, read at index) so the frozen `metadata.json` schema is untouched. New
-`MeetingRecord` cols `source`+`calendarEventId` (**migration v4**). **No voice-ID** (assisted labeling only);
-imported video is audio-only; auto-summary stays call-only. Reliability: `JobBridge` **serializes** concurrent
-runs; meetings show a **processing spinner** immediately; the index **self-heals on launch**
-(`MeetingStore.reconcile`). Sidebar simplified to **All Meetings** + per-row spinner; search moved to the
-sidebar; calendar toggle on the detail trailing edge. Core **124** + pipeline **56** + build green;
-**live-verified on a real ~40-min Hebrew call**. ⏳ still verify: 3+ diarization on an imported 2-person
-recording + a video-container import. Spec/plan: `docs/superpowers/{specs,plans}/2026-06-22-calendar-upload-context*`;
-DECISIONS 2026-06-22.
+**⏳ PENDING LIVE VERIFICATION (Yuval):**
+1. Audio device picker — select a non-default mic in Settings → Audio, record, verify correct device used.
+2. Level meter — confirm it moves on mic input.
+3. Recipe selector — switch to `brief-summary`, run auto-summary, verify shorter output.
+4. Queue view — confirm progress bar + per-phase labels during a real pipeline run.
+5. Launch-at-login — install the app (make dmg → drag to /Applications), enable in Settings, reboot, confirm
+   quiet background launch.
+6. Dictation — grant AX when prompted, ⌃⌥⌘D in a text field, speak, ⌃⌥⌘D again, confirm Hebrew pasted.
+7. Unsigned DMG CI — push a `v*` tag to a fork / test repo, confirm the workflow runs and produces a GitHub
+   Release with the DMG attached.
+8. Custom summaries — Settings → Summary: create a recipe (name + instructions), save; open a meeting;
+   "Summarize with… ▾" → run the new recipe; confirm `summaries/<id>.md` appears; run a second recipe;
+   use the switcher; Copy/Re-run/Delete each entry; confirm no phantom entry in Queue view.
 
-**✅ DONE this session (2026-06-23) → branch `feat/modular-meeting-layout` (⏳ live-verify + open PR): feature
-#2 — modular / resizable meeting layout.** `MeetingDetailView` is now **side-by-side**: a left context column
-(video + collapsible summary) beside a full-height transcript, drag-resizable with **globally-persisted**
-divider sizes (`@AppStorage` `detail.columnSplit`/`detail.mediaSplit`). Adapts to **Summary | Transcript**
-(audio-only) and to a **full-width transcript** (no context). Summary hides via a header **"Summary"** toggle
-(`showSummaryPane`). New pure Core `SplitLayout` (clamp math, **12 tests**) backs a reusable app-target
-`ResizableSplit` (Liquid Glass handle). Core **136** + `make build-mac` green; layout-only (no schema/behavior
-change). Spec/plan: `docs/superpowers/{specs/2026-06-23-modular-meeting-layout-design,plans/2026-06-23-modular-meeting-layout}.md`;
-manual-tests `docs/manual-tests-modular-layout.md`; DECISIONS 2026-06-23. ⏳ **Live-verify**: video + audio
-meeting, drag both dividers, toggle summary, relaunch for persistence; **known nit** — summary-toggle on an
-audio meeting may reset the transcript scroll (deferred until we see if it's noticeable).
+**After live-verify:** push branch → open PR → merge → activate the account-gated distribution (Developer
+ID + notarization + Sparkle) when the $99 Apple Developer account lands.
 
-**IN PROGRESS (2026-06-24, branch `chore/rename-inv-meetings`):** product rename **"IN Meetings" → "INV
-Meetings"** — **brand strings only** (window titles, buttons, onboarding/error/usage copy, `CFBundleDisplayName`).
-On-disk cache `IN Meetings/`, the Drive `IN Meetings` folder, the bundle id, and code identifiers/`IN_MEETINGS_*`
-env are **deliberately unchanged** (no migration / no TCC-OAuth re-grant — Yuval's call). 17 strings, 6 files,
-both builds green; `CFBundleDisplayName` confirmed `INV Meetings`.
-
-**NEXT — START HERE:** the remaining v1 gaps below — the **Ship** phase (gated on the $99 Apple Developer
-account) and a **global cache-size cap**. No designed-but-unbuilt feature is queued.
-
-**Other remaining v1 gaps:** **Ship** phase (Developer-ID sign + notarize + `.dmg` + launch-at-login + Sparkle
-— done LAST, gated on a **$99 Apple Developer account**; runbook `docs/distribution-setup.md`; interim
-**`make dmg`** exists for local unsigned install testing); a **global cache-size cap**. The in-app "AI overview"
-panel stays out of v1.
-
-**✅ Live-verification DONE (Yuval, 2026-06-24).** The merged v1 features — auto-stop (#13), the
-auto-summary panel + flow (#12), calendar-anchored import (#17), modular layout (#18), VAD + multi-party
-diarization — are live-verified and accepted. Do **not** re-list these as outstanding test debt.
+**Remaining v1 gaps after this branch:**
+- **Ship** — Developer-ID sign + notarize + Sparkle (account-gated; the workflow + appcast template
+  already exist; runbook `docs/distribution-setup.md`).
+- **Global cache-size cap** — delete oldest synced meetings beyond N GB (still TODO).
 
 **Note (scope):** this project has **NO Saventa/CRM connection** — the auto-summary writes `summary.md`
 only. Do not surface CRM posting as a feature or task.

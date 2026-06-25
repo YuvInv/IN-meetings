@@ -7,6 +7,7 @@ struct DashboardSidebar: View {
     var body: some View {
         List(selection: $selection) {
             Label("All Meetings", systemImage: "tray.full").tag(DashboardSelection.allMeetings)
+            Label("Queue", systemImage: "clock.arrow.circlepath").tag(DashboardSelection.queue)
         }
         .listStyle(.sidebar)
         .safeAreaInset(edge: .bottom) {

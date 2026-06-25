@@ -18,12 +18,18 @@ final class RecordingStore {
     /// The recorder's `JobBridge` — used to kick the saventa-summary run for the manual Summarize / Retry
     /// button (the same runner the auto-trigger uses, so runs stay serialized). nil in previews/tests.
     @ObservationIgnored private let jobBridge: JobBridge?
+    /// Recipe registry: discovers bundled + user-supplied recipes so the per-meeting run menu and the
+    /// summary-entry display names can be resolved without threading the registry through DashboardWindow.
+    /// Built from the bundled `skills/` root; nil in previews / unit tests where there is no bundle.
+    @ObservationIgnored private let registry: SummaryRecipeRegistry?
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
     init(store: MeetingStore? = try? MeetingStore(url: MeetingStore.defaultURL),
-         drive: DriveAuth? = nil, jobBridge: JobBridge? = nil) {
+         drive: DriveAuth? = nil, jobBridge: JobBridge? = nil,
+         registry: SummaryRecipeRegistry? = JobBridge.bundledRecipesRootURL().map { SummaryRecipeRegistry(bundledRoot: $0) }) {
         self.store = store
         self.drive = drive
         self.jobBridge = jobBridge
+        self.registry = registry
         store?.reconcile()   // self-heal: index any meeting whose completion the watcher missed (relaunch)
         load()
         // Reload when a pipeline job finishes/fails (JobBridge) or a summary completes (SummaryRunner) so
@@ -54,16 +60,60 @@ final class RecordingStore {
         }
     }
 
-    /// Generate (or re-generate) the saventa-summary for a meeting — the dashboard's manual Summarize /
-    /// Retry. Routed through the recorder's `JobBridge` so it shares the one `SummaryRunner`. The runner
+    /// Generate (or re-generate) the meeting summary — the dashboard's manual Summarize / Retry.
+    /// Routed through the recorder's `JobBridge` so it shares the one `SummaryRunner`. The runner
     /// updates the index + posts `.summaryDidFinish`, which reloads this store.
-    func summarize(_ meeting: MeetingRecord) {
-        jobBridge?.summarize(meetingID: meeting.id, folder: URL(fileURLWithPath: meeting.folderPath))
+    ///
+    /// - Parameter recipeID: When non-nil, use this recipe instead of the user's active-recipe preference
+    ///   (per-meeting override, A2 stretch goal).
+    func summarize(_ meeting: MeetingRecord, recipeID: String? = nil) {
+        jobBridge?.summarize(meetingID: meeting.id, folder: URL(fileURLWithPath: meeting.folderPath),
+                             recipeID: recipeID)
     }
     /// The generated summary text (`summary.md`) for a meeting, if it exists.
     func summaryText(for meeting: MeetingRecord) -> String? {
         try? String(contentsOf: URL(fileURLWithPath: meeting.folderPath).appendingPathComponent("summary.md"),
                     encoding: .utf8)
+    }
+
+    // MARK: - Multi-summary accessors (T3)
+
+    /// All summaries that exist for a meeting, ordered most-recent-first.
+    ///
+    /// Uses the Core `makeSummaryEntries` helper (pure, unit-tested). The legacy fallback is handled
+    /// there: if the DB returns no rows but `summary.md` exists on disk, a single
+    /// `"saventa-summary"` entry is synthesised so older meetings still appear in the switcher.
+    func summaryEntries(for meeting: MeetingRecord) -> [SummaryEntry] {
+        let folder = URL(fileURLWithPath: meeting.folderPath)
+        let rows = (try? store?.summaries(forMeeting: meeting.id)) ?? []
+        return makeSummaryEntries(rows: rows, folderURL: folder) { [weak self] id in
+            self?.registry?.recipe(id: id)?.displayName ?? humanizeRecipeId(id)
+        }
+    }
+
+    /// The text for a specific recipe's summary. Reads `summaries/<recipeId>.md`; if absent, falls
+    /// back to `summary.md` (covers the legacy + T2 mirror cases).
+    func summaryText(for meeting: MeetingRecord, recipeId: String) -> String? {
+        let folder = URL(fileURLWithPath: meeting.folderPath)
+        let perRecipe = folder.appendingPathComponent("summaries/\(recipeId).md")
+        if let text = try? String(contentsOf: perRecipe, encoding: .utf8) { return text }
+        // Mirror / legacy fallback.
+        return try? String(contentsOf: folder.appendingPathComponent("summary.md"), encoding: .utf8)
+    }
+
+    /// All available recipes (bundled + user-supplied) for the "Summarize with…" run menu.
+    func recipes() -> [SummaryRecipe] { registry?.all() ?? [] }
+
+    /// Delete one recipe's summary and re-establish a coherent post-delete state: remove its DB row + its
+    /// on-disk file, recompute the rollup (`meeting.summaryState`), and manage the `summary.md` mirror so
+    /// deleting the last summary doesn't leave a phantom legacy entry or a stuck Queue row (see
+    /// `reconcileAfterSummaryDelete`). Posting `.summaryDidFinish` reloads this store (the observer's
+    /// `load()`) and refreshes any open detail view. Drive copy is left in place (out of scope for T3).
+    func deleteSummary(_ meeting: MeetingRecord, recipeId: String) {
+        guard let store else { return }
+        try? reconcileAfterSummaryDelete(store: store, meetingId: meeting.id, recipeId: recipeId,
+                                         folder: URL(fileURLWithPath: meeting.folderPath))
+        NotificationCenter.default.post(name: .summaryDidFinish, object: nil)
     }
 
     var filtered: [MeetingRecord] { filterMeetings(meetings, search: search) }
@@ -140,5 +190,16 @@ final class RecordingStore {
 
 enum DashboardSelection: Hashable {
     case allMeetings
+    case queue
     case meeting(String)
+}
+
+// MARK: - Private helpers
+
+/// Humanize a kebab-case recipe id into a display name, e.g. `"saventa-summary"` → `"Saventa Summary"`.
+/// Used as a fallback when the registry doesn't know the id.
+private func humanizeRecipeId(_ id: String) -> String {
+    id.split(separator: "-")
+        .map { $0.prefix(1).uppercased() + $0.dropFirst() }
+        .joined(separator: " ")
 }

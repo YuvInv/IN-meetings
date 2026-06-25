@@ -9,6 +9,7 @@ struct DashboardWindow: View {
     let jobBridge: JobBridge
     @State private var storeModel: RecordingStore
     @State private var calendarModel: CalendarPanelModel
+    @State private var queueModel: QueueModel
     @AppStorage("showCalendarPanel") private var showCalendar = false
     @State private var importing = false
     @State private var pendingEvent: CalendarEvent?
@@ -18,6 +19,7 @@ struct DashboardWindow: View {
         self.jobBridge = jobBridge
         let store = RecordingStore(drive: drive, jobBridge: jobBridge)
         _storeModel = State(initialValue: store)
+        _queueModel = State(initialValue: QueueModel(store: store, jobBridge: jobBridge))
         _calendarModel = State(initialValue: CalendarPanelModel(
             calendar: CalendarContext(),
             recordedIds: { [weak store] in store?.recordedCalendarEventIds() ?? [] }))
@@ -83,6 +85,8 @@ struct DashboardWindow: View {
     @ViewBuilder private var content: some View {
         switch storeModel.selection ?? .allMeetings {
         case .allMeetings:  MeetingListView(meetings: storeModel.filtered, selection: $storeModel.selection)
+        case .queue:
+            QueueView(model: queueModel, store: storeModel, jobBridge: jobBridge)
         case .meeting(let id):
             if let m = storeModel.meeting(id: id) { MeetingDetailView(meeting: m, store: storeModel).id(id) }
             else { ContentUnavailableView("Meeting not found", systemImage: "questionmark.folder") }

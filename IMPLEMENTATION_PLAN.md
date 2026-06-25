@@ -85,11 +85,40 @@ retention/size cap rides with it. Full rationale in `DECISIONS.md` (2026-06-15).
     `MeetingDetailView` is a fixed `VStack`. Likely `HSplitView`/`VSplitView` with persisted sizes, adapting
     when there's no video. **Brief: `docs/superpowers/specs/2026-06-22-modular-meeting-layout-brief.md`.**
 
+### v1 Breadth — A1…A6 + distribution + custom summaries (branch `feat/v1-breadth-features`, 2026-06-24/25)
+All build + Core 265/0 green; NOT yet pushed; live-verification pending with Yuval.
+- **A1 audio device picker** ✅ (Settings → Audio tab; CoreAudio UID enumeration; system-default fallback;
+  adaptive gain default OFF).
+- **A2 summary recipes** ✅ (registry: bundled + user Recipes dir; recipe-agnostic `makeArguments`; active
+  recipe off-main; 2nd bundled `brief-summary`; Settings → Summary tab, autoSummary toggle moved here).
+  **Extended with custom summaries** ✅ (see below).
+- **A3 queue / processing view** ✅ (JobBridge `progress` + `activeMeetingID`; computed `QueueModel.items`;
+  per-phase labels + progress bar + Reveal-log + Retry; `QueuePhase.derive` unit-tested).
+- **A4 settings — launch-at-login + version** ✅ (`SMAppService.mainApp` behind `LaunchAtLoginManaging`;
+  app version in General tab; Sparkle update-check UI deliberately NOT shipped — dead no-op pre-account).
+- **A6 dictation** ✅ (global-hotkey on-device dictation; `whisper-cli` direct; toggle; He+En hotkeys;
+  contextual AX grant; default OFF; 30s watchdog; non-activating overlay).
+- **DIST distribution pipeline** ✅ (`.github/workflows/release.yml` → unsigned DMG → GitHub Releases on
+  `v*` tag, works NOW; `docs/appcast.xml` template; architecture: GitHub Releases + Pages + Sparkle 2
+  EdDSA; signing/notarization/Sparkle account-gated on secrets).
+- **Custom summaries** ✅ (2026-06-25 — extends A2; delivers the "custom summary recipes" direction from
+  Future/post-v1 as a first-class feature):
+  - **In-app recipe editor**: Settings → Summary create/edit/delete sheet; `SummaryRecipeStore` saves to
+    `~/Library/Application Support/IN Meetings/Recipes/<slug>/recipe.md` + `name.txt`.
+  - **Multiple summaries per meeting**: per-recipe `summaries/<recipeId>.md` output + `summary.md` mirror
+    (back-compat); migration v5 `meetingSummary` table; `SummaryRunner` per-recipe with in-flight guard +
+    rollup; Drive syncs per-recipe files. Frozen ADR-005 schemas untouched.
+  - **Meeting-page UI**: summary switcher + "Summarize with… ▾" per-meeting menu + Copy/Re-run/Delete;
+    `SummaryReconcile` deletes cleanly (no phantom Queue entries).
+  ⏳ live-verify: create a recipe, run two recipes on one meeting, switch/Copy/Re-run/Delete.
+
 ### P2 — Polish & robustness extras
 Speaker naming ✅ (PR #11, manual one-tap assign). _(Auto-stop moved up to a P1 must-have, 2026-06-16.)_
-Remaining: ring-buffer pre-roll; trash/delete + export-SRT + open-in-Drive; mic-device picker + hotkey rebind
-+ storage/consent settings; fuzzy/edit-distance post-correction; tighten Drive scope to `drive.file`; a global
-cache-size cap. (Onboarding/TCC wizard ✅ done, PR #14.)
+Mic-device picker ✅ (A1, breadth branch). Hotkey rebind + storage/consent settings ✅ (A4/A6 breadth branch).
+Custom recipe UI + multiple summaries per meeting ✅ (breadth branch, 2026-06-25).
+Remaining: ring-buffer pre-roll; trash/delete + export-SRT + open-in-Drive; fuzzy/edit-distance
+post-correction; tighten Drive scope to `drive.file`; a global cache-size cap. (Onboarding/TCC wizard ✅
+done, PR #14.)
 
 ### Future / post-v1 (captured, NOT designed yet)
 - **User-defined post-meeting skills.** A Settings surface where each user describes to Claude what to do with
@@ -104,11 +133,19 @@ The "make it installable" packaging is deliberately the **final** step — set u
 pipeline once, when the app is feature-complete, rather than re-fighting it as the app changes. **Gated on
 an Apple Developer Program membership** (only an `Apple Development` cert exists today — no Developer ID).
 Enrollment + technical runbook: [`docs/distribution-setup.md`](docs/distribution-setup.md).
+
+**Release hosting pipeline is NOW AUTHORED** (breadth branch `feat/v1-breadth-features`, 2026-06-24):
+- `.github/workflows/release.yml` — unsigned `.dmg` → GitHub Releases on `v*` tag. Works **right now**
+  with no Apple account; signing/notarization/Sparkle steps are present but account-gated on secrets.
+- `docs/appcast.xml` template + "Release hosting + auto-update" section in `docs/distribution-setup.md`.
+- Architecture: **GitHub Releases** (binaries) + **GitHub Pages** (appcast.xml) + **Sparkle 2** (EdDSA).
+
+**Still account-gated (pending the $99 Apple Developer enrollment):**
 - **Developer-ID signing** (replaces the dev cert) + **hardened runtime**.
-- **Notarize + staple** (`notarytool`) → a **drag-to-`/Applications` `.dmg`**.
-- **Launch-at-login** (`SMAppService`) against the *installed* app + quiet-login (no dashboard pop).
-- **Sparkle** auto-update (needs Developer-ID + notarization + EdDSA keys).
+- **Notarize + staple** (`notarytool`) → a Gatekeeper-clean drag-to-`/Applications` `.dmg`.
+- **Sparkle** auto-update (EdDSA key pair + signed appcast + `SUPublicEDKey` in Info.plist).
 - Install-test on a second Mac (clean Gatekeeper + audio-TCC).
+- **Launch-at-login** against the *installed* `/Applications` app (registers correctly post-install).
 
 Development continues on the current **Apple Development** signing until then — only *distribution to other
 Macs* needs Developer ID.

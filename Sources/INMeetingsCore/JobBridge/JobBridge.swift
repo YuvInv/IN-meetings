@@ -12,7 +12,13 @@ import Observation
 public final class JobBridge {
     /// queued | transcribing | diarizing | packaging | done | failed  (nil = no job yet)
     public private(set) var phase: String?
+    /// 0–1 progress fraction emitted by status.json (nil = no job yet / phase has no granular progress).
+    public private(set) var progress: Double?
     public private(set) var lastError: String?
+    /// The meeting id (`folder.lastPathComponent`) of the job currently being processed. Cleared when the
+    /// job reaches a terminal phase. Used by `QueueModel` to attach live phase/progress to the right row
+    /// while other `"processing"` rows render as "Queued" (decision 2, A3).
+    public private(set) var activeMeetingID: String?
 
     private let pipelineDir: URL
     private let python: URL
@@ -34,17 +40,33 @@ public final class JobBridge {
     /// Phase-2 calendar context (ADR-004): fetched before spawn so the assembler has its input. No-op
     /// until the user connects a Google account (the same credential as Drive).
     @ObservationIgnored private lazy var calendarContext: CalendarContext? = CalendarContext()
-    /// Saventa-summary auto-trigger (ADR-008, amended): runs the app-bundled recipe via headless `claude -p`
-    /// after a finished call, writing summary.md + syncing it to Drive. nil when the recipe isn't bundled
-    /// (e.g. unit tests) → auto-summary no-ops. Shares the store; re-uploads summary.md via `driveBackup`.
+    /// Recipe registry for bundled + user-supplied summary recipes (A2). Built lazily from the bundled
+    /// `skills/` root; nil when the skills dir isn't present (e.g. unit tests) → auto-summary no-ops.
+    @ObservationIgnored private lazy var recipeRegistry: SummaryRecipeRegistry? = {
+        guard let root = Self.bundledRecipesRootURL() else { return nil }
+        return SummaryRecipeRegistry(bundledRoot: root)
+    }()
+
+    /// Summary auto-trigger (ADR-008, amended, A2): runs the user's active recipe via headless `claude -p`
+    /// after a finished call, writing summary.md + syncing it to Drive. nil when the recipe root isn't
+    /// bundled (e.g. unit tests) → auto-summary no-ops. Shares the store; re-uploads summary.md via
+    /// `driveBackup`. The active recipe is resolved at run time by reading UserDefaults off the main actor
+    /// so the `@Sendable` closure stays Sendable-correct (no `@MainActor` capture). Falls back to the
+    /// saventa-summary dir so a reset/unset preference still works.
     @ObservationIgnored private lazy var summaryRunner: SummaryRunner? = {
         guard let store, let resources = Self.bundledSummaryResourcesURL() else { return nil }
         let backup = driveBackup
+        let registry = recipeRegistry
         return SummaryRunner(
             store: store, resourcesURL: resources,
+            resolveActiveRecipe: registry.map { reg in {
+                @Sendable () -> SummaryRecipe? in
+                let id = SummaryRecipeSettings.activeRecipeID(.standard)
+                return reg.active(id: id)
+            }},
             syncSummary: backup.map { b in
-                { @Sendable (id: String, folder: URL) in
-                    await b.syncSummaryIfConfigured(meetingID: id, packageFolder: folder)
+                { @Sendable (id: String, folder: URL, fileName: String) in
+                    await b.syncSummaryIfConfigured(meetingID: id, packageFolder: folder, fileName: fileName)
                 }
             })
     }()
@@ -84,6 +106,17 @@ public final class JobBridge {
         return nil
     }
 
+    /// The bundled `skills/` root containing all bundled recipes (immediate subdirs with `recipe.md`).
+    /// nil when not bundled (e.g. unit tests). Used to build the `SummaryRecipeRegistry`.
+    public nonisolated static func bundledRecipesRootURL() -> URL? {
+        // Prefer a resource-path lookup so it works in both Debug and Release layouts.
+        if let res = Bundle.main.resourceURL {
+            let dir = res.appendingPathComponent("skills")
+            if FileManager.default.fileExists(atPath: dir.path) { return dir }
+        }
+        return nil
+    }
+
     /// Write the job file and start the pipeline for a finished recording.
     /// Write the job file and start the pipeline for a finished recording. The record-time facts
     /// (`startedAt` / `endedAt` / `captureSourceApp`) feed metadata.json (ADR-005); sample rate +
@@ -110,7 +143,7 @@ public final class JobBridge {
         let statusURL = dir.appendingPathComponent("status.json")
         _ = try? store?.markProcessing(folder: dir)   // show the meeting (with a spinner) immediately
         notifyDashboard()
-        if !isRunning { lastError = nil; phase = "queued" }   // immediate feedback when idle; don't clobber a running job
+        if !isRunning { lastError = nil; phase = "queued"; progress = nil }   // immediate feedback when idle; don't clobber a running job
         // Fetch calendar context (best-effort, short timeout) *before* spawning so the assembler has its
         // context.input.json; then start (or queue) the pipeline. A no-op when no Google account is connected.
         Task { @MainActor in
@@ -140,7 +173,7 @@ public final class JobBridge {
         let statusURL = directory.appendingPathComponent("status.json")
         _ = try? store?.markProcessing(folder: directory)   // show the imported meeting (with a spinner) immediately
         notifyDashboard()
-        if !isRunning { lastError = nil; phase = "queued" }
+        if !isRunning { lastError = nil; phase = "queued"; progress = nil }
         beginOrQueue { [weak self] in self?.spawn(jobURL: jobURL, statusURL: statusURL) }
     }
 
@@ -229,6 +262,8 @@ public final class JobBridge {
         isRunning = true
         lastError = nil
         phase = "queued"
+        progress = nil
+        activeMeetingID = jobURL.deletingLastPathComponent().lastPathComponent
         captureLog.notice("jobbridge.spawned meeting=\(jobURL.deletingLastPathComponent().lastPathComponent, privacy: .public)")
         watchStatus(statusURL)
     }
@@ -239,26 +274,41 @@ public final class JobBridge {
             MainActor.assumeIsolated {
                 guard let self else { timer.invalidate(); return }
                 guard let data = try? Data(contentsOf: statusURL),
-                      let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                      let phase = obj["phase"] as? String else { return }
-                self.phase = phase
-                if phase == "done" || phase == "failed" {
-                    let folder = statusURL.deletingLastPathComponent()
-                    if phase == "failed" {
-                        self.lastError = obj["error"] as? String
-                        self.recordFailure(folder: folder, error: obj["error"] as? String)
-                    }
-                    if phase == "done" {
-                        self.indexCompletedPackage(at: folder)
-                        self.notifyDashboard()
-                    }
-                    captureLog.notice("jobbridge.finished phase=\(phase, privacy: .public)")
-                    timer.invalidate()
-                    self.isRunning = false
-                    self.startNextIfQueued()
-                }
+                      let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
+                self.applyStatus(obj, folder: statusURL.deletingLastPathComponent(), timer: timer)
             }
         }
+    }
+
+    /// Apply one parsed `status.json` payload to the bridge's observable state — the body of the
+    /// `watchStatus` poll, extracted so it's unit-testable without spawning a real subprocess. Updates
+    /// `phase`/`progress` on each tick (A3 decision 1) and, on a terminal phase, runs completion
+    /// (indexing/Drive/summary), clears the active job, and drains the next queued spawn.
+    ///
+    /// - Parameter timer: the polling timer to invalidate on a terminal phase (nil in tests).
+    /// - Returns: `true` once a terminal phase (`done`/`failed`) was reached, else `false`.
+    @discardableResult
+    func applyStatus(_ obj: [String: Any], folder: URL, timer: Timer? = nil) -> Bool {
+        guard let phase = obj["phase"] as? String else { return false }
+        self.phase = phase
+        self.progress = obj["progress"] as? Double
+        guard phase == "done" || phase == "failed" else { return false }
+
+        if phase == "failed" {
+            self.lastError = obj["error"] as? String
+            self.recordFailure(folder: folder, error: obj["error"] as? String)
+        }
+        if phase == "done" {
+            self.indexCompletedPackage(at: folder)
+            self.notifyDashboard()
+        }
+        captureLog.notice("jobbridge.finished phase=\(phase, privacy: .public)")
+        timer?.invalidate()
+        self.isRunning = false
+        self.activeMeetingID = nil
+        self.progress = nil
+        self.startNextIfQueued()
+        return true
     }
 
     /// Mirror a finished package into the SQLite index (ADR-006) so the dashboard can see it.
@@ -289,13 +339,34 @@ public final class JobBridge {
         }
     }
 
-    /// Kick the saventa-summary run for a meeting — the dashboard's manual **Summarize** / **Retry** button
+    /// Kick the summary run for a meeting — the dashboard's manual **Summarize** / **Retry** button
     /// (the auto path above runs the same `SummaryRunner`, so runs stay serialized). Non-blocking; a no-op
     /// if the recipe isn't bundled. The runner updates the index, posts `.summaryDidFinish`, and re-uploads
     /// summary.md to Drive on success.
-    public func summarize(meetingID: String, folder: URL) {
+    ///
+    /// - Parameter recipeID: When non-nil, use this recipe instead of the user's active-recipe preference
+    ///   (per-meeting override, A2 stretch goal). Resolved via the registry; falls back to the default
+    ///   when the id is unknown.
+    public func summarize(meetingID: String, folder: URL, recipeID: String? = nil) {
         guard let summaryRunner else { return }
-        Task { await summaryRunner.run(meetingID: meetingID, folder: folder) }
+        let override: SummaryRecipe? = recipeID.flatMap { recipeRegistry?.recipe(id: $0) }
+        Task { await summaryRunner.run(meetingID: meetingID, folder: folder, recipeOverride: override) }
+    }
+
+    /// Re-run the pipeline for a previously-failed job. `job.json` + `status.json` are already on disk;
+    /// we reset the status and re-queue the spawn via the existing serialised `beginOrQueue` path (A3,
+    /// decision 4). Call this from the Queue view's "Retry" button on a `.failed` meeting.
+    public func retry(folder: URL) {
+        let jobURL = folder.appendingPathComponent("job.json")
+        let statusURL = folder.appendingPathComponent("status.json")
+        guard FileManager.default.fileExists(atPath: jobURL.path) else {
+            lastError = "Cannot retry: job.json not found in \(folder.lastPathComponent)"
+            return
+        }
+        _ = try? store?.markProcessing(folder: folder)
+        notifyDashboard()
+        if !isRunning { lastError = nil; phase = "queued"; progress = nil }
+        beginOrQueue { [weak self] in self?.spawn(jobURL: jobURL, statusURL: statusURL) }
     }
 
     /// Record a pipeline failure in the index (reliability pass) so the dashboard can show it instead of

@@ -208,6 +208,49 @@ public final class MeetingStore {
         }
     }
 
+    // MARK: - Per-recipe summaries (migration v5)
+
+    /// Insert or update the per-(meeting, recipe) summary row (multiple summaries per meeting). Mirrors
+    /// `updateSummaryState`'s COALESCE on the session id, so a "running" → "done" pair keeps whatever id was
+    /// captured. The rollup `meeting.summaryState` is updated separately by the caller (`SummaryRunner`).
+    public func upsertSummary(meetingId: String, recipeId: String, state: String,
+                              error: String? = nil, sessionId: String? = nil,
+                              now: Date = Date()) throws {
+        let updatedAt = ISO8601DateFormatter().string(from: now)
+        try dbQueue.write { db in
+            try db.execute(
+                sql: """
+                INSERT INTO meetingSummary (meetingId, recipeId, state, error, sessionId, updatedAt) \
+                VALUES (?, ?, ?, ?, ?, ?) \
+                ON CONFLICT(meetingId, recipeId) DO UPDATE SET \
+                state = excluded.state, \
+                error = excluded.error, \
+                sessionId = COALESCE(excluded.sessionId, meetingSummary.sessionId), \
+                updatedAt = excluded.updatedAt
+                """,
+                arguments: [meetingId, recipeId, state, error, sessionId, updatedAt])
+        }
+    }
+
+    /// Every recipe's summary row for a meeting, oldest update first (the meeting-page switcher, T3).
+    public func summaries(forMeeting id: String) throws -> [MeetingSummary] {
+        try dbQueue.read { db in
+            try MeetingSummary
+                .filter(Column("meetingId") == id)
+                .order(Column("updatedAt").asc)
+                .fetchAll(db)
+        }
+    }
+
+    /// Remove one recipe's summary row (the per-summary Delete action, T3). Idempotent.
+    public func deleteSummary(meetingId: String, recipeId: String) throws {
+        try dbQueue.write { db in
+            try db.execute(
+                sql: "DELETE FROM meetingSummary WHERE meetingId = ? AND recipeId = ?",
+                arguments: [meetingId, recipeId])
+        }
+    }
+
     /// The set of calendar event ids that already have a recording (any source). Powers the panel's
     /// "✓ recorded" marker. Distinct, non-null only.
     public func calendarEventIdsWithRecording() throws -> Set<String> {
@@ -277,6 +320,21 @@ public final class MeetingStore {
                 t.add(column: "calendarEventId", .text)
             }
         }
+        migrator.registerMigration("v5-meeting-summaries") { db in
+            // Per-(meeting, recipe) summary state, so several summaries can coexist on one meeting (each
+            // recipe writes `summaries/<recipeId>.md`). The existing `meeting.summaryState`/`summaryError`/
+            // `summarySessionId` columns are kept as a rollup (latest run) so the meeting-list indicator and
+            // the pre-T3 detail view keep working; this table is the authoritative per-recipe record.
+            try db.create(table: MeetingSummary.databaseTableName) { t in
+                t.column("meetingId", .text).notNull()
+                t.column("recipeId", .text).notNull()
+                t.column("state", .text).notNull()      // "running" | "done" | "failed"
+                t.column("error", .text)                 // set only when state == "failed"
+                t.column("sessionId", .text)             // claude -p session id, for a later --resume
+                t.column("updatedAt", .text).notNull()
+                t.primaryKey(["meetingId", "recipeId"])
+            }
+        }
         return migrator
     }
 }
@@ -317,4 +375,35 @@ public struct MeetingRecord: Codable, FetchableRecord, PersistableRecord, Sendab
     /// The Google Calendar event id this meeting is bound to (nil = none). Lets the calendar panel mark
     /// events as already recorded and open them. Filled from `metadata.meeting.calendarEventId` at index.
     public var calendarEventId: String? = nil
+}
+
+/// One per-(meeting, recipe) summary (migration v5): a meeting can hold several summaries that coexist —
+/// one row per recipe that's been run, each tracking that recipe's `summaries/<recipeId>.md` output. The
+/// `meeting.summaryState` rollup remains the latest run's state for the list/pre-T3 UI; this is the
+/// authoritative per-recipe record the meeting-page switcher (T3) reads.
+public struct MeetingSummary: Codable, FetchableRecord, PersistableRecord, Sendable, Equatable {
+    public static let databaseTableName = "meetingSummary"
+
+    /// The meeting id (`MeetingRecord.id` / the package folder name).
+    public var meetingId: String
+    /// The recipe id (`SummaryRecipe.id` / the folder name), e.g. "saventa-summary".
+    public var recipeId: String
+    /// "running" | "done" | "failed".
+    public var state: String
+    /// Set only when `state == "failed"`: the error to show in the meeting page.
+    public var error: String?
+    /// The `claude -p` session id from this recipe's run, so a later follow-up can `--resume`.
+    public var sessionId: String?
+    /// ISO8601 timestamp of the last state change — orders the switcher.
+    public var updatedAt: String
+
+    public init(meetingId: String, recipeId: String, state: String,
+                error: String? = nil, sessionId: String? = nil, updatedAt: String) {
+        self.meetingId = meetingId
+        self.recipeId = recipeId
+        self.state = state
+        self.error = error
+        self.sessionId = sessionId
+        self.updatedAt = updatedAt
+    }
 }
