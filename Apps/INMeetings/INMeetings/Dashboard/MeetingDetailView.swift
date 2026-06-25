@@ -16,7 +16,11 @@ struct MeetingDetailView: View {
     @State private var draftCompany = ""
     @State private var renamingSpeakerId: String?
     @State private var customName = ""
-    @AppStorage("showSummaryPane") private var showSummaryPane = true
+    // Per-meeting view state, NOT global @AppStorage: the view is identity-scoped per meeting (`.id(id)`
+    // in DashboardWindow), so this resets to `true` on every meeting open — a meeting that has a summary
+    // always shows it by default, and collapsing it affects only the meeting you're viewing. (A global
+    // persisted toggle silently hid the summary on every meeting once turned off — see DECISIONS 2026-06-25.)
+    @State private var showSummaryPane = true
     private var pkg: TranscriptPackage? { store.transcript(for: meeting) }
 
     var body: some View {
