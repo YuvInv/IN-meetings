@@ -1,6 +1,8 @@
 # ADR-006 — Storage, backend & Google Drive sync
 
 > **⚠️ Amended 2026-06-14** (see [DECISIONS.md](../DECISIONS.md)): Drive sync is **Swift-owned** (moved out of the Python pipeline) with a **per-user dynamic backup location** (each user connects their account + picks the Shared Drive). A **Drive folder picker** + a retention/size cap are **P1**.
+>
+> **⚠️ Amended 2026-06-25** (see [DECISIONS.md](../DECISIONS.md)): the per-meeting Drive layout is now a **flat folder named with the meeting timestamp** directly under the chosen location (no `<Company>/` tier), holding only **the recording + `transcript.txt` + `summary.md`**. Drive is a human-facing share, not a full context-package mirror — the complete package stays local. Supersedes the "Decision" section's company-first layout and "What syncs" list below.
 
 **Status:** Proposed · **Date:** 2026-06-11 · **Deciders:** Yuval (review)
 **Brief item:** E · **Confirmed:** Drive auth = per-user OAuth (user decision)
