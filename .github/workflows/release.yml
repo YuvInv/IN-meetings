@@ -194,9 +194,11 @@ jobs:
               "https://github.com/${{ github.repository }}/releases/download/${RELEASE_TAG}/" \
             --link "https://yuvinv.github.io/IN-meetings/appcast.xml"
           rm -f "$KEYFILE"
-          # Publish appcast.xml to gh-pages (served at the SUFeedURL).
+          # Publish appcast.xml to gh-pages (served at the SUFeedURL). -f discards the working-tree edits
+          # the "Stamp version from tag" step made to project.yml (not needed past the build); dist/ is
+          # gitignored so the freshly-generated appcast survives the branch switch.
           git fetch origin gh-pages
-          git checkout -B gh-pages FETCH_HEAD
+          git checkout -f -B gh-pages FETCH_HEAD
           cp dist/sparkle/appcast.xml appcast.xml
           git add appcast.xml
           git -c user.name="github-actions[bot]" \
