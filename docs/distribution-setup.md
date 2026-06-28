@@ -202,8 +202,9 @@ activate automatically (they're already authored, gated on `DEVELOPER_ID_CERT`).
 
 ### Version-bump rule (per release)
 
-**Use `make release VERSION=0.2.0`** (from `main`). It bumps `MARKETING_VERSION` in `project.yml`, commits,
-tags `v0.2.0`, and pushes — the tag fires the workflow. CI then stamps the build at tag time:
+**Use `make release VERSION=0.2.0`** (from `main`). It tags `main`'s HEAD as `v0.2.0` and pushes **just the
+tag** — no commit to `main`, so it works with branch protection. The tag fires the workflow, and CI stamps
+the build at tag time:
 - `MARKETING_VERSION` — from the tag (`v0.2.0` → `0.2.0`); the user-visible version in Sparkle's dialog.
 - `CURRENT_PROJECT_VERSION` — the **CI run number** (monotonic), the build number Sparkle compares to detect
   a newer release. (So you never hand-manage the build number; the committed `project.yml` value is just a

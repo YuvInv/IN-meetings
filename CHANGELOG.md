@@ -12,9 +12,10 @@ workflow, which builds the `.dmg`, signs + publishes the Sparkle appcast, and cr
 - **In-app auto-update (Sparkle 2).** "Check for Updates…" in the app menu and the menu-bar dropdown;
   automatic daily background checks. Update integrity is EdDSA-signed, so updates work for the internal
   unsigned builds too — the Apple Developer account only gates a Gatekeeper-clean *first* install.
-- **Release pipeline.** `make release VERSION=x.y.z` bumps the version, tags, and pushes; CI builds the
-  `.dmg`, packages the Sparkle `.zip`, generates the signed appcast (→ `gh-pages`), and publishes a GitHub
-  Release. Version is stamped from the git tag; the build number is the CI run number.
+- **Release pipeline.** `make release VERSION=x.y.z` tags `main`'s HEAD and pushes the tag (no commit to
+  `main`, so it works with branch protection); CI builds the `.dmg`, packages the Sparkle `.zip`, generates
+  the signed appcast (→ `gh-pages`), and publishes a GitHub Release. The version is stamped from the git
+  tag; the build number is the CI run number.
 - **v1 "must-have" features** (merged via #23): user notifications (transcript/summary ready, failures) with
   tap-to-open; meeting delete + sort + live transcription progress; full-text transcript search (Hebrew-
   capable, jump-to-moment); Markdown + PDF export (RTL); inline transcript editing + global find-and-replace
