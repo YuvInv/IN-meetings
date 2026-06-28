@@ -104,10 +104,12 @@ public final class SummaryRunner: @unchecked Sendable {
         let summariesDir = folder.appendingPathComponent("summaries")
         try? FileManager.default.createDirectory(at: summariesDir, withIntermediateDirectories: true)
         let relativeOutputPath = "summaries/\(recipeId).md"
+        let actionsRelativePath = "summaries/\(recipeId)-actions.json"
         let perRecipeURL = folder.appendingPathComponent(relativeOutputPath)
 
         let logURL = folder.appendingPathComponent("summary.log")
-        let args = Self.makeArguments(folder: folder, relativeOutputPath: relativeOutputPath, systemPrompt: systemPrompt)
+        let args = Self.makeArguments(folder: folder, relativeOutputPath: relativeOutputPath,
+                                      actionsOutputPath: actionsRelativePath, systemPrompt: systemPrompt)
         summaryLog.notice("summary.run meeting=\(meetingID, privacy: .public) recipe=\(recipeId, privacy: .public) claude=\(claude.path, privacy: .public)")
 
         let outcome: ProcessOutcome
@@ -134,8 +136,18 @@ public final class SummaryRunner: @unchecked Sendable {
         setState(meetingID, recipeId, "done", error: nil, sessionId: sessionId)
         // Sync the per-recipe file to Drive (the `summary.md` mirror also re-syncs via the full-package path
         // / textFileNames; uploading the per-recipe file keeps each recipe's summary on Drive too).
-        if let syncSummary { await syncSummary(meetingID, folder, relativeOutputPath) }
+        if let syncSummary {
+            await syncSummary(meetingID, folder, relativeOutputPath)
+            // The structured action-items sidecar (PR 7), when the recipe emitted it, rides to Drive too.
+            if FileManager.default.fileExists(atPath: folder.appendingPathComponent(actionsRelativePath).path) {
+                await syncSummary(meetingID, folder, actionsRelativePath)
+            }
+        }
         notify()
+        let recipeName = recipe.displayName
+        await MainActor.run {
+            MeetingNotifier.shared.post(title: "Summary ready", body: recipeName, meetingID: meetingID)
+        }
         summaryLog.notice("summary.done meeting=\(meetingID, privacy: .public) recipe=\(recipeId, privacy: .public) session=\(sessionId ?? "?", privacy: .public)")
     }
 
@@ -199,12 +211,15 @@ public final class SummaryRunner: @unchecked Sendable {
     /// `relativeOutputPath` is the package-relative file the run must write (T2:
     /// `summaries/<recipeId>.md`, so concurrent recipes never collide). Naming the exact path in the prompt
     /// keeps each recipe's output isolated; the rest of the flags are unchanged.
-    static func makeArguments(folder: URL, relativeOutputPath: String, systemPrompt: String) -> [String] {
+    static func makeArguments(folder: URL, relativeOutputPath: String,
+                              actionsOutputPath: String, systemPrompt: String) -> [String] {
         [
             "-p",
             "Read the meeting context package in this folder (\(folder.path)) — transcript.json / transcript.txt "
                 + "and metadata.json — and write the meeting summary to \(relativeOutputPath) in that same "
-                + "folder, following the recipe exactly. Do not do anything else.",
+                + "folder, following the recipe exactly. Then write the meeting's action items / next steps as "
+                + "JSON to \(actionsOutputPath) in that same folder, following the 'Action items' section of the "
+                + "recipe; if there are no clear action items, write {\"items\": []}. Do not do anything else.",
             "--append-system-prompt", systemPrompt,
             "--permission-mode", "acceptEdits",
             "--allowedTools", "Read,Edit,Write,Glob,Grep",

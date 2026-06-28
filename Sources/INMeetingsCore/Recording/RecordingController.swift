@@ -17,6 +17,9 @@ public final class RecordingController {
     }
 
     public private(set) var state: State = .idle
+    /// True while recording is paused (audio muted to a silent gap; the picture keeps recording on a video
+    /// call). Elapsed keeps counting — pause maps to a silent stretch in the file, not a clock stop.
+    public private(set) var isPaused = false
     /// Seconds since recording started; 0 when idle. Drives the live menu-bar timer.
     public private(set) var elapsed: TimeInterval = 0
     /// Peak-level self-check from the last recording (e.g. "Last: mic −15 dB · sys −42 dB").
@@ -76,6 +79,27 @@ public final class RecordingController {
     public func toggle() {
         if isRecording { stop() } else { Task { await start() } }
     }
+
+    /// Live mic level (dBFS) for the recording HUD meter; −120 when not recording.
+    public var currentMicDB: Float { session?.currentMicDB ?? -120 }
+    /// Live system/remote level (dBFS) for the HUD; nil for in-person or when not recording.
+    public var currentSystemDB: Float? { session?.currentSystemDB }
+
+    /// Pause = mute the recording to a silent gap (the file stays continuous and aligned). No-op unless
+    /// recording. `resume()` lifts the gate; `togglePause()` flips it.
+    public func pause() {
+        guard isRecording, !isPaused else { return }
+        isPaused = true
+        session?.setMuted(true)
+    }
+
+    public func resume() {
+        guard isRecording, isPaused else { return }
+        isPaused = false
+        session?.setMuted(false)
+    }
+
+    public func togglePause() { isPaused ? resume() : pause() }
 
     public func start() async {
         guard !isRecording else { return }
@@ -140,6 +164,7 @@ public final class RecordingController {
         // must not let the next recording's source app leak into this one's metadata.
         let sourceApp = recordingSourceApp
         elapsed = 0
+        isPaused = false
         state = .idle
         guard let session else { return }
         // Stopping is async now (the video writer is finalized) — do it off the synchronous toggle, then

@@ -316,14 +316,20 @@ public final class JobBridge {
     /// package is the durable source of truth, and re-indexing the same id just updates the row).
     private func indexCompletedPackage(at folder: URL) {
         var meetingType: String?
+        var friendlyName = "Meeting"
         do {
             let record = try store?.indexPackage(at: folder)
             meetingType = record?.type
+            if let record {
+                friendlyName = [record.company, record.title].compactMap { $0 }.first { !$0.isEmpty } ?? "Meeting"
+            }
             captureLog.notice("jobbridge.indexed meeting=\(record?.id ?? "?", privacy: .public)")
         } catch {
             captureLog.error("jobbridge.index failed: \(error.localizedDescription, privacy: .public)")
         }
         let id = folder.lastPathComponent
+        // Notify the user that the (often 10–15 min) transcription finished — they've moved on by now.
+        MeetingNotifier.shared.post(title: "Transcript ready", body: friendlyName, meetingID: id)
         // Auto-summarize finished *calls* when the toggle is on (file-only → safe to auto-run). In-person
         // meetings can still be summarized manually from the dashboard.
         let autoSummarize = meetingType == "call"
@@ -374,6 +380,10 @@ public final class JobBridge {
     private func recordFailure(folder: URL, error: String?) {
         do { _ = try store?.markFailed(folder: folder, error: error) }
         catch { captureLog.error("jobbridge.markFailed failed: \(error.localizedDescription, privacy: .public)") }
+        // Surface the failure — otherwise it's silent and the meeting just looks stuck.
+        MeetingNotifier.shared.post(title: "Recording couldn’t be processed",
+                                    body: error ?? "The transcription pipeline failed. Open INV Meetings to retry.",
+                                    meetingID: folder.lastPathComponent)
         notifyDashboard()
     }
 

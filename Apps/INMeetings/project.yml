@@ -25,10 +25,17 @@ targets:
       - path: INMeetings
         excludes:
           - "Resources/skills"
+          - "AppIcon.icon"
       # The saventa-summary recipe + house-style is bundled as a folder reference so its subdirectory
       # structure (house-style/*.md) survives into the .app — SummaryRunner reads it from the bundle.
       - path: INMeetings/Resources/skills
         type: folder
+        buildPhase: resources
+      # The Icon Composer app icon (macOS 26 layered Liquid Glass). `.icon` is a wrapper *directory*, so
+      # force `type: file` — otherwise XcodeGen makes it a blue folder reference and just copies the raw
+      # icon.json/layer PNG into Resources instead of letting actool compile it (→ no CFBundleIconName).
+      - path: INMeetings/AppIcon.icon
+        type: file
         buildPhase: resources
     dependencies:
       - package: INMeetingsCore

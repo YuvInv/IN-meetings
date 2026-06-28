@@ -1,6 +1,17 @@
 import Foundation
 
-public enum DriveAuthError: Error, Sendable, Equatable { case notConnected, refreshFailed }
+public enum DriveAuthError: Error, Sendable, Equatable, LocalizedError {
+    case notConnected, refreshFailed
+
+    public var errorDescription: String? {
+        switch self {
+        case .notConnected:
+            return "Not signed in to Google. Connect your account in Settings ▸ Calendar (or Drive)."
+        case .refreshFailed:
+            return "Google sign-in expired or failed. Reconnect in Settings ▸ Calendar."
+        }
+    }
+}
 
 /// Supplies a valid Drive access token, transparently refreshing (and persisting) it when expired.
 /// The network refresh is **injected** so the refresh decision + token carry-forward are unit-tested;

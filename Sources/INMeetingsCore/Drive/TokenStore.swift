@@ -18,7 +18,19 @@ public final class InMemoryTokenStore: TokenStore, @unchecked Sendable {
     public func clear() throws { credential = nil }
 }
 
-public enum KeychainError: Error { case unexpectedStatus(OSStatus) }
+public enum KeychainError: Error, LocalizedError {
+    case unexpectedStatus(OSStatus)
+
+    /// A human message (and the real `OSStatus`) instead of Swift's default "KeychainError error 0" — the
+    /// bare enum-ordinal rendering hides which keychain call failed and why.
+    public var errorDescription: String? {
+        switch self {
+        case .unexpectedStatus(let status):
+            let detail = SecCopyErrorMessageString(status, nil) as String?
+            return "Keychain error \(status)" + (detail.map { " — \($0)" } ?? "")
+        }
+    }
+}
 
 /// Keychain-backed store: one generic-password item holding the JSON-encoded credential.
 public final class KeychainTokenStore: TokenStore, @unchecked Sendable {
@@ -33,7 +45,13 @@ public final class KeychainTokenStore: TokenStore, @unchecked Sendable {
     private var baseQuery: [String: Any] {
         [kSecClass as String: kSecClassGenericPassword,
          kSecAttrService as String: service,
-         kSecAttrAccount as String: account]
+         kSecAttrAccount as String: account,
+         // Use the modern data-protection keychain: the item is owned by the app's team-prefixed
+         // keychain-access-group (stable across binary renames/re-signs), not the login keychain's
+         // per-binary ACL — which rejected writes with errSecInvalidOwnerEdit (-25244) after a re-sign.
+         // With a single keychain-access-group entitlement, that group is used by default (no explicit
+         // kSecAttrAccessGroup needed), which also keeps this Core type free of the team prefix.
+         kSecUseDataProtectionKeychain as String: true]
     }
 
     public func load() -> DriveCredential? {

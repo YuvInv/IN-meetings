@@ -106,6 +106,22 @@ public final class CaptureSession {
         }
     }
 
+    /// Pause-as-mute: gate audio writes on every active recorder. While muted the tracks keep capturing +
+    /// metering but write silence, so the files keep a continuous, aligned timeline (a silent gap).
+    public func setMuted(_ muted: Bool) {
+        mic?.muted = muted
+        systemTap?.muted = muted
+        callRecorder?.setMuted(muted)
+    }
+
+    /// Live mic level (dBFS) for the recording HUD, across whichever path is active. −120 when idle.
+    public var currentMicDB: Float { callRecorder?.currentMicDB ?? mic?.currentDB ?? -120 }
+    /// Live system/remote level (dBFS) for the HUD — nil for in-person (no system track).
+    public var currentSystemDB: Float? {
+        if let callRecorder { return callRecorder.currentSystemDB }
+        return systemTap?.currentDB
+    }
+
     /// Stops capture (flushing the WAVs, finalizing the video) and reports what was captured + the A/V
     /// offsets (unified path only).
     @discardableResult

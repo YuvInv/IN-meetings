@@ -12,6 +12,12 @@ final class MicRecorder {
     let outputURL: URL
     /// Whole-capture peak (−120 if pure silence) — the RecordingController self-check reads this.
     var peak: Float { meter.peak }
+    /// Latest per-buffer RMS (NOT the cumulative peak) — drives the live recording-HUD meter, which needs
+    /// an instantaneous level that falls again, not a monotonically-rising max.
+    private(set) var currentLevel: Float = 0
+    /// "Pause" = mute: while true the buffer is still read + metered, but written as SILENCE so the WAV
+    /// keeps a continuous timeline (a silent gap) and stays aligned with the system/video tracks.
+    var muted = false
     private(set) var bufferCount = 0
 
     private let engine = AVAudioEngine()
@@ -30,6 +36,17 @@ final class MicRecorder {
 
     /// Peak as dBFS over the whole capture (−120 if pure silence).
     var peakDB: Float { LevelMeter.dBFS(peak) }
+    /// Instantaneous level as dBFS for the live HUD meter.
+    var currentDB: Float { LevelMeter.dBFS(currentLevel) }
+
+    /// Zero a float PCM buffer in place — used to write silence while muted (preserves the timeline).
+    static func silence(_ buffer: AVAudioPCMBuffer) {
+        guard let channels = buffer.floatChannelData else { return }
+        let frames = Int(buffer.frameLength)
+        for c in 0..<Int(buffer.format.channelCount) {
+            memset(channels[c], 0, frames * MemoryLayout<Float>.size)
+        }
+    }
 
     func start() throws {
         let input = engine.inputNode
@@ -57,7 +74,9 @@ final class MicRecorder {
             guard let self else { return }
             self.bufferCount += 1
             if self.adaptiveGain != nil { self.applyGain(to: buf) }
-            _ = self.meter.process(buf)
+            let (rms, _) = self.meter.process(buf)
+            self.currentLevel = rms          // live HUD level (metered from the real signal)
+            if self.muted { Self.silence(buf) }   // paused → write a silent gap, keep the timeline
             try? self.file?.write(from: buf)
         }
 

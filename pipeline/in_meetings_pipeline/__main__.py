@@ -12,6 +12,7 @@ Speaker attribution is profile-aware (ADR-003/011):
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -30,6 +31,49 @@ def load_vocab(directory: Path) -> list[dict]:
     """Context-assembler biasing vocabulary (Phase 2). Absent for now → post-correction is a no-op."""
     p = directory / "context.vocab.json"
     return json.loads(p.read_text(encoding="utf-8")) if p.exists() else []
+
+
+def load_user_vocab() -> list[dict]:
+    """User-taught corrections from the dashboard's find-&-replace "remember this" toggle, applied to
+    EVERY meeting. Written by the macOS app as ``[{"canonical": ..., "variants": [...]}]``. Path: the
+    ``IN_MEETINGS_VOCAB_CORRECTIONS`` env override (kept in sync with the app's ``VocabStore``), else the
+    app's Application Support file. Absent/unreadable → no user corrections (stays a no-op).
+    """
+    env = os.environ.get("IN_MEETINGS_VOCAB_CORRECTIONS")
+    p = (
+        Path(env)
+        if env
+        else Path.home() / "Library/Application Support/IN Meetings/vocab-corrections.json"
+    )
+    if not p.exists():
+        return []
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    return data if isinstance(data, list) else []
+
+
+def merge_vocab(base: list[dict], extra: list[dict]) -> list[dict]:
+    """Merge two vocab lists by canonical, unioning variants (order-stable; ``base`` entries first)."""
+    merged: list[dict] = []
+    index: dict[str, dict] = {}
+    for entry in [*base, *extra]:
+        if not isinstance(entry, dict):
+            continue
+        canon = entry.get("canonical")
+        if not canon:
+            continue
+        variants = [v for v in entry.get("variants", []) if v]
+        if canon in index:
+            for v in variants:
+                if v not in index[canon]["variants"]:
+                    index[canon]["variants"].append(v)
+        else:
+            new = {"canonical": canon, "variants": list(variants)}
+            index[canon] = new
+            merged.append(new)
+    return merged
 
 
 def _safe_turns(wav: Path) -> list[SpeakerTurn]:
@@ -91,7 +135,7 @@ def run(job_path: Path) -> int:
         status.write("diarizing", 0.6)
         segments, speakers, diarized = attribute_speakers(job, mic_segs, system_segs)
 
-        vocab = load_vocab(job.directory)
+        vocab = merge_vocab(load_vocab(job.directory), load_user_vocab())
         biased = bool(vocab)
         terms = [t.get("canonical", "") for t in vocab if isinstance(t, dict)]
         terms = [t for t in terms if t]

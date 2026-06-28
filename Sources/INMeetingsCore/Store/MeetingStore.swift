@@ -5,7 +5,8 @@ import GRDB
 /// context packages that powers the dashboard (ADR-007) and tracks Drive sync state (slice 6).
 ///
 /// Local disk is a cache; Drive is the durable source of truth. The DB lives next to the model cache
-/// under `~/Library/Application Support/IN Meetings/`. FTS5 search is deferred to the dashboard (H4).
+/// under `~/Library/Application Support/IN Meetings/`. Transcripts are mirrored into an FTS5 index
+/// (migration v6) so the dashboard can search inside meetings, not just titles.
 public final class MeetingStore {
     private let dbQueue: DatabaseQueue
 
@@ -68,7 +69,11 @@ public final class MeetingStore {
             source: jobSource,
             calendarEventId: metadata.meeting.calendarEventId
         )
-        try dbQueue.write { db in try record.save(db) }
+        try dbQueue.write { db in
+            try record.save(db)
+            // Mirror the transcript into the FTS index so it's searchable (re-index replaces prior rows).
+            if let transcript { try Self.writeTranscriptFTS(db, meetingId: record.id, utterances: transcript.utterances) }
+        }
         return record
     }
 
@@ -165,15 +170,34 @@ public final class MeetingStore {
 
     // MARK: - Queries
 
-    /// Every meeting, most recent first (the dashboard list, ADR-007).
-    public func allMeetings() throws -> [MeetingRecord] {
+    /// Every meeting in the requested order (the dashboard list, ADR-007). Defaults to most-recent first.
+    public func allMeetings(sortBy sort: MeetingSortOrder = .dateNewest) throws -> [MeetingRecord] {
         try dbQueue.read { db in
-            try MeetingRecord.order(Column("startedAt").desc).fetchAll(db)
+            let request: QueryInterfaceRequest<MeetingRecord>
+            switch sort {
+            case .dateNewest: request = MeetingRecord.order(Column("startedAt").desc)
+            case .dateOldest: request = MeetingRecord.order(Column("startedAt").asc)
+            case .company:    request = MeetingRecord.order(Column("company").asc, Column("startedAt").desc)
+            case .duration:   request = MeetingRecord.order(Column("durationSeconds").desc, Column("startedAt").desc)
+            case .status:     request = MeetingRecord.order(Column("status").asc, Column("startedAt").desc)
+            }
+            return try request.fetchAll(db)
         }
     }
 
     public func meeting(id: String) throws -> MeetingRecord? {
         try dbQueue.read { db in try MeetingRecord.fetchOne(db, key: id) }
+    }
+
+    /// Delete a meeting locally: its per-recipe summary rows then the meeting row, in one write. The Drive
+    /// copy is intentionally left in place (it's the shared team archive); the on-disk package folder is
+    /// removed by the caller. Idempotent — deleting an unknown id is a no-op.
+    public func deleteMeeting(id: String) throws {
+        try dbQueue.write { db in
+            try db.execute(sql: "DELETE FROM meetingSummary WHERE meetingId = ?", arguments: [id])
+            try db.execute(sql: "DELETE FROM \(Self.ftsTable) WHERE meetingId = ?", arguments: [id])
+            try db.execute(sql: "DELETE FROM meeting WHERE id = ?", arguments: [id])
+        }
     }
 
     /// Record the Drive destination + sync state after an upload (slice 6).
@@ -268,6 +292,96 @@ public final class MeetingStore {
         }
     }
 
+    // MARK: - Transcript search (FTS5)
+
+    static let ftsTable = "meetingTranscriptFTS"
+
+    /// Replace a meeting's FTS rows with one row per utterance. Called inside an existing write.
+    static func writeTranscriptFTS(_ db: Database, meetingId: String,
+                                   utterances: [TranscriptPackage.Utterance]) throws {
+        try db.execute(sql: "DELETE FROM \(ftsTable) WHERE meetingId = ?", arguments: [meetingId])
+        for u in utterances {
+            try db.execute(
+                sql: "INSERT INTO \(ftsTable) (text, meetingId, startTime, speakerId) VALUES (?, ?, ?, ?)",
+                arguments: [u.text, meetingId, u.start, u.speakerId])
+        }
+    }
+
+    /// Full-text search across all transcripts. Returns one hit per matching utterance (with a `snippet`
+    /// excerpt + the utterance `startTime` for jump-to-moment), ordered by meeting then time.
+    /// Returns `[]` for a query that has no searchable terms (so punctuation-only input is a no-op,
+    /// never an `fts5: syntax error`).
+    public func searchTranscripts(query: String) throws -> [TranscriptSearchHit] {
+        guard let match = Self.ftsMatchExpression(from: query) else { return [] }
+        return try dbQueue.read { db in
+            let rows = try Row.fetchAll(db, sql: """
+                SELECT meetingId, startTime, speakerId, \
+                snippet(\(Self.ftsTable), 0, '', '', '…', 12) AS snippet \
+                FROM \(Self.ftsTable) WHERE \(Self.ftsTable) MATCH ? \
+                ORDER BY meetingId, CAST(startTime AS REAL)
+                """, arguments: [match])
+            return rows.map { row in
+                // FTS5 may return startTime as a REAL, an INTEGER, or text depending on storage — decode all.
+                let start: Double
+                switch (row["startTime"] as DatabaseValue).storage {
+                case let .double(d): start = d
+                case let .int64(i): start = Double(i)
+                case let .string(s): start = Double(s) ?? 0
+                default: start = 0
+                }
+                return TranscriptSearchHit(
+                    meetingId: row["meetingId"],
+                    startTime: start,
+                    speakerId: row["speakerId"],
+                    snippet: row["snippet"])
+            }
+        }
+    }
+
+    /// Build a safe FTS5 MATCH expression from raw user input: split on whitespace, drop the quote
+    /// delimiter and any term with no letters/digits, then AND each surviving term as a prefix query.
+    /// Wrapping every term in double quotes neutralizes FTS5 operators (so `a-b`, `OR`, `(` are literal).
+    static func ftsMatchExpression(from raw: String) -> String? {
+        let terms = raw.split(whereSeparator: { $0.isWhitespace })
+            .map { $0.replacingOccurrences(of: "\"", with: "") }
+            .filter { $0.rangeOfCharacter(from: .alphanumerics) != nil }
+        guard !terms.isEmpty else { return nil }
+        return terms.map { "\"\($0)\"*" }.joined(separator: " ")
+    }
+
+    /// Re-index one meeting's transcript into the FTS table after an in-app edit (utterance edit /
+    /// find-&-replace), so search reflects the corrected text. Best-effort.
+    public func reindexTranscriptSearch(meetingId: String, folder: URL) {
+        guard let transcript = try? PackageReader.transcript(in: folder) else { return }
+        try? dbQueue.write { db in
+            try Self.writeTranscriptFTS(db, meetingId: meetingId, utterances: transcript.utterances)
+        }
+    }
+
+    /// Populate the FTS index from on-disk transcripts when it's empty but meetings exist — a one-time
+    /// migration backfill (the FTS table is added empty; existing meetings were indexed before it existed).
+    /// Best-effort: a meeting with no readable transcript is skipped.
+    public func backfillTranscriptSearchIfNeeded() {
+        do {
+            let count = try dbQueue.read { db in
+                try Int.fetchOne(db, sql: "SELECT count(*) FROM \(Self.ftsTable)") ?? 0
+            }
+            guard count == 0 else { return }
+            let metas = try allMeetings()
+            guard !metas.isEmpty else { return }
+            for m in metas {
+                let folder = URL(fileURLWithPath: m.folderPath)
+                guard let transcript = try? PackageReader.transcript(in: folder),
+                      !transcript.utterances.isEmpty else { continue }
+                try dbQueue.write { db in
+                    try Self.writeTranscriptFTS(db, meetingId: m.id, utterances: transcript.utterances)
+                }
+            }
+        } catch {
+            // Best-effort: search just stays empty until the next successful index.
+        }
+    }
+
     // MARK: - Schema
 
     private static var migrator: DatabaseMigrator {
@@ -335,8 +449,30 @@ public final class MeetingStore {
                 t.primaryKey(["meetingId", "recipeId"])
             }
         }
+        migrator.registerMigration("v6-transcript-fts") { db in
+            // Standalone (non-external-content) FTS5 index over transcript utterances — searchable text
+            // plus unindexed columns for jump-to-moment. Default unicode61 tokenizer handles Hebrew. The
+            // table is created empty; `backfillTranscriptSearchIfNeeded()` indexes pre-existing meetings.
+            try db.execute(sql: """
+                CREATE VIRTUAL TABLE \(ftsTable) USING fts5(
+                    text,
+                    meetingId UNINDEXED,
+                    startTime UNINDEXED,
+                    speakerId UNINDEXED,
+                    tokenize = 'unicode61'
+                )
+                """)
+        }
         return migrator
     }
+}
+
+/// One full-text search hit: the meeting + the matched utterance's time/speaker + a snippet excerpt.
+public struct TranscriptSearchHit: Sendable {
+    public let meetingId: String
+    public let startTime: Double
+    public let speakerId: String
+    public let snippet: String
 }
 
 /// One indexed meeting (ADR-006). A GRDB record mapped to the `meeting` table; Drive ids + sync state
@@ -405,5 +541,21 @@ public struct MeetingSummary: Codable, FetchableRecord, PersistableRecord, Senda
         self.error = error
         self.sessionId = sessionId
         self.updatedAt = updatedAt
+    }
+}
+
+/// User-selectable ordering for the dashboard meeting list. Date orders stay date-bucketed in the UI;
+/// the rest render as a flat sorted list.
+public enum MeetingSortOrder: String, CaseIterable, Sendable {
+    case dateNewest, dateOldest, company, duration, status
+
+    public var label: String {
+        switch self {
+        case .dateNewest: return "Date (newest)"
+        case .dateOldest: return "Date (oldest)"
+        case .company:    return "Company"
+        case .duration:   return "Duration"
+        case .status:     return "Status"
+        }
     }
 }

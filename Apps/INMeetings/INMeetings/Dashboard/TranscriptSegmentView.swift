@@ -1,6 +1,7 @@
 // Adapted from Mila (github.com/island-io/mila), © Island Technology / Uri Harduf, Apache-2.0. Changes: rebuilt against our MeetingRecord/SQLite index + Liquid Glass; English chrome.
 
 import SwiftUI
+import AppKit
 import INMeetingsCore
 
 struct TranscriptSegmentView: View {
@@ -8,6 +9,8 @@ struct TranscriptSegmentView: View {
     let speaker: TranscriptPackage.Speaker?
     let isActive: Bool
     let onTap: () -> Void
+    /// Open the inline editor for this line (right-click → "Edit text…"). nil disables editing.
+    var onEdit: (() -> Void)? = nil
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             if let s = speaker {
@@ -23,5 +26,12 @@ struct TranscriptSegmentView: View {
         .padding(8)
         .background(isActive ? Color.accentColor.opacity(0.18) : .clear, in: RoundedRectangle(cornerRadius: 6))
         .contentShape(Rectangle()).onTapGesture(perform: onTap)
+        .contextMenu {
+            if let onEdit { Button("Edit text…", systemImage: "pencil") { onEdit() } }
+            Button("Copy text", systemImage: "doc.on.doc") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(utterance.text, forType: .string)
+            }
+        }
     }
 }
