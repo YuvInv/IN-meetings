@@ -18,6 +18,19 @@ APP_PRODUCT     := $(DERIVED_DATA)/Build/Products/$(CONFIGURATION)/$(APP_NAME)
 # picker shows a "not configured" setup panel instead of a broken web view.
 PICKER_KEY      := $(or $(GOOGLE_PICKER_API_KEY),$(shell cat .secrets/picker_api_key.txt 2>/dev/null))
 
+# Code signing for `make dmg`. Default `dev` = your local Apple Development cert (a normal signed build).
+# CI has no Apple account (and the team-prefixed entitlements need a provisioning profile, so even ad-hoc
+# fails), so it passes CODESIGN=none → signing fully disabled: the app builds **unsigned**. It runs via
+# right-click→Open, but the team-prefixed keychain-access-group entitlement isn't applied, so Google
+# sign-in (Drive/Calendar) won't work on these interim builds — that needs Developer-ID (the $99 account).
+# Sparkle/EdDSA auto-update is independent of code signing and works regardless.
+CODESIGN        ?= dev
+ifeq ($(CODESIGN),none)
+SIGN_FLAGS      := CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= CODE_SIGN_ENTITLEMENTS= DEVELOPMENT_TEAM= PROVISIONING_PROFILE_SPECIFIER=
+else
+SIGN_FLAGS      :=
+endif
+
 # Colors
 GREEN  := \033[0;32m
 YELLOW := \033[0;33m
@@ -82,6 +95,7 @@ dmg: ## Build a LOCAL UNSIGNED Release .dmg for install/onboarding testing (NOT 
 		-derivedDataPath $(DERIVED_DATA) \
 		-allowProvisioningUpdates \
 		GOOGLE_PICKER_API_KEY="$(PICKER_KEY)" \
+		$(SIGN_FLAGS) \
 		build 2>&1 | tail -8
 	@if [ ! -d "$(RELEASE_PRODUCT)" ]; then \
 		printf "$(RED)[dmg]$(NC) FAILED: Release app not found. Try 'make gen'.\n"; exit 1; \
