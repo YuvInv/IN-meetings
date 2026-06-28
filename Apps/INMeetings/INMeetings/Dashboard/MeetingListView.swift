@@ -13,17 +13,9 @@ struct MeetingListView: View {
 
     var body: some View {
         ScrollView {
-            if !store.search.trimmingCharacters(in: .whitespaces).isEmpty {
-                searchResultsList
-            } else if meetings.isEmpty {
-                ContentUnavailableView("Nothing here yet", systemImage: "tray",
-                                       description: Text("New meetings will appear here."))
-                    .padding(.top, 60)
-            } else if store.sortOrder == .dateNewest || store.sortOrder == .dateOldest {
-                bucketedList
-            } else {
-                flatList
-            }
+            listContent
+                .padding(20)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
         .alert("Delete meeting?", isPresented: Binding(
             get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } })) {
@@ -32,6 +24,44 @@ struct MeetingListView: View {
         } message: {
             Text("Removes this meeting from this Mac. The copy on Google Drive is kept.")
         }
+    }
+
+    /// The scroll body: search results, the empty state, or the sort control above the meeting list.
+    @ViewBuilder private var listContent: some View {
+        if !store.search.trimmingCharacters(in: .whitespaces).isEmpty {
+            searchResultsList
+        } else if meetings.isEmpty {
+            ContentUnavailableView("Nothing here yet", systemImage: "tray",
+                                   description: Text("New meetings will appear here."))
+                .padding(.top, 60)
+        } else {
+            VStack(alignment: .leading, spacing: 16) {
+                sortControl
+                if store.sortOrder == .dateNewest || store.sortOrder == .dateOldest {
+                    bucketedList
+                } else {
+                    flatList
+                }
+            }
+        }
+    }
+
+    /// Sort menu — relocated from the top-right toolbar to sit left-aligned above the first day header
+    /// ("Today"). Same options and binding as before; re-loads the list when the order changes.
+    private var sortControl: some View {
+        Menu {
+            Picker("Sort", selection: Binding(
+                get: { store.sortOrder },
+                set: { store.sortOrder = $0; store.load() })) {
+                ForEach(MeetingSortOrder.allCases, id: \.self) { Text($0.label).tag($0) }
+            }
+        } label: {
+            Label("Sort", systemImage: "arrow.up.arrow.down")
+        }
+        .menuStyle(.button)
+        .buttonStyle(.bordered)
+        .fixedSize()
+        .help("Sort meetings")
     }
 
     /// Date-bucketed (Today / Yesterday / …). `bucketMeetingsByDate` is newest-first; for the oldest-first
@@ -51,7 +81,6 @@ struct MeetingListView: View {
                 }
             }
         }
-        .padding(20)
     }
 
     /// Results for the active search query: title/company matches AND full-text transcript hits, each
@@ -79,7 +108,6 @@ struct MeetingListView: View {
                 }
             }
         }
-        .padding(20)
     }
 
     /// Flat, single-section list for the non-date orders (company / duration / status). The list is
@@ -88,7 +116,6 @@ struct MeetingListView: View {
         VStack(alignment: .leading, spacing: 6) {
             rowsContainer(meetings)
         }
-        .padding(20)
     }
 
     /// Content rows sit on the standard control surface — NOT Liquid Glass. Per the macOS 26 HIG, glass
