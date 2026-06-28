@@ -183,14 +183,17 @@ jobs:
           curl --fail -sL \
             "https://github.com/sparkle-project/Sparkle/releases/download/${SPARKLE_VERSION}/Sparkle-${SPARKLE_VERSION}.tar.xz" \
             | tar -xJ bin/generate_appcast
-          # Sign + generate the appcast from the dir holding ONLY the .zip (printf avoids a trailing
-          # newline corrupting the key read from stdin).
-          printf '%s' "$SPARKLE_KEY" | \
-            ./bin/generate_appcast dist/sparkle/ \
-              --ed-key-file /dev/stdin \
-              --download-url-prefix \
-                "https://github.com/${{ github.repository }}/releases/download/${RELEASE_TAG}/" \
-              --link "https://yuvinv.github.io/IN-meetings/appcast.xml"
+          # Sign + generate the appcast from the dir holding ONLY the .zip. generate_appcast reads the key
+          # via Foundation's file API, which can't open /dev/stdin — write it to a real temp file (printf
+          # avoids a trailing newline corrupting the key).
+          KEYFILE="$(mktemp)"
+          printf '%s' "$SPARKLE_KEY" > "$KEYFILE"
+          ./bin/generate_appcast dist/sparkle/ \
+            --ed-key-file "$KEYFILE" \
+            --download-url-prefix \
+              "https://github.com/${{ github.repository }}/releases/download/${RELEASE_TAG}/" \
+            --link "https://yuvinv.github.io/IN-meetings/appcast.xml"
+          rm -f "$KEYFILE"
           # Publish appcast.xml to gh-pages (served at the SUFeedURL).
           git fetch origin gh-pages
           git checkout -B gh-pages FETCH_HEAD
