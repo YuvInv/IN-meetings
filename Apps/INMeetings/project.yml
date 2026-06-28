@@ -58,5 +58,9 @@ targets:
         CURRENT_PROJECT_VERSION: "1"
         GENERATE_INFOPLIST_FILE: false
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # Default empty so a plain Xcode build expands Info.plist's $(GOOGLE_PICKER_API_KEY) to "" (the
+        # picker shows a "not configured" panel). The real key is injected as a build-setting override by
+        # the Makefile (from .secrets/) and CI (from the GOOGLE_PICKER_API_KEY secret) — never committed.
+        GOOGLE_PICKER_API_KEY: ""
         SWIFT_VERSION: "5.0"
         LD_RUNPATH_SEARCH_PATHS: ["$(inherited)", "@executable_path/../Frameworks"]

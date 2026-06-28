@@ -83,6 +83,8 @@ jobs:
       # `make dmg` runs `make gen` then xcodebuild Release then
       # scripts/make-dmg.sh → dist/INMeetings.dmg
       - name: Build unsigned .dmg (make dmg)
+        env:
+          GOOGLE_PICKER_API_KEY: ${{ secrets.GOOGLE_PICKER_API_KEY }}
         run: make dmg
 
       # ── 5. Verify artifact exists ────────────────────────────────────────────

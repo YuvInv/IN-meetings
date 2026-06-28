@@ -54,5 +54,9 @@
 	<true/>
 	<key>SUScheduledCheckInterval</key>
 	<integer>86400</integer>
+	<!-- Google Picker browser API key, baked in at build time from the GOOGLE_PICKER_API_KEY build
+	     setting (fed by .secrets/picker_api_key.txt locally / the CI secret). Empty on a plain build. -->
+	<key>GooglePickerAPIKey</key>
+	<string>$(GOOGLE_PICKER_API_KEY)</string>
 </dict>
 </plist>

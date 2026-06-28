@@ -30,11 +30,15 @@ public enum DriveConfig {
     /// the Picker API + an HTTP referrer (`https://localhost/*`). Do NOT commit the literal: this repo can
     /// be public, and `AIza…` keys in public repos get scraped + abused (and auto-disabled by Google).
     public static var pickerAPIKey: String {
-        ProcessInfo.processInfo.environment["GOOGLE_PICKER_API_KEY"] ?? pickerAPIKeyDefault
+        // 1) dev override via env var; 2) the value baked into the bundle at build time (Info.plist
+        // `GooglePickerAPIKey`, expanded from the GOOGLE_PICKER_API_KEY build setting — see the Makefile
+        // and release.yml, which feed it from .secrets/ locally and the CI secret in Actions). Empty ⇒
+        // the picker shows a "not configured" panel. The literal is NEVER committed.
+        if let env = ProcessInfo.processInfo.environment["GOOGLE_PICKER_API_KEY"], !env.isEmpty { return env }
+        if let baked = Bundle.main.object(forInfoDictionaryKey: "GooglePickerAPIKey") as? String,
+           !baked.isEmpty, !baked.hasPrefix("$(") { return baked }
+        return ""
     }
-    /// Intentionally empty — the key is injected via `GOOGLE_PICKER_API_KEY` (see above), never committed.
-    /// Empty ⇒ the picker shows a "not configured yet" panel with setup steps instead of a broken web view.
-    static let pickerAPIKeyDefault = ""
 
     /// The GCP **project number** (the numeric prefix of the OAuth client id) — required by the Picker.
     public static let pickerAppID = "1062382667236"
