@@ -3,13 +3,13 @@
     <channel>
         <title>INV Meetings</title>
         <item>
-            <title>0.1.0</title>
-            <pubDate>Sun, 28 Jun 2026 12:27:06 +0000</pubDate>
+            <title>1.0.0</title>
+            <pubDate>Sun, 28 Jun 2026 12:52:33 +0000</pubDate>
             <link>https://yuvinv.github.io/IN-meetings/appcast.xml</link>
-            <sparkle:version>5</sparkle:version>
-            <sparkle:shortVersionString>0.1.0</sparkle:shortVersionString>
+            <sparkle:version>6</sparkle:version>
+            <sparkle:shortVersionString>1.0.0</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
-            <enclosure url="https://github.com/YuvInv/IN-meetings/releases/download/v0.1.0/INMeetings.zip" length="8783252" type="application/octet-stream" sparkle:edSignature="KslUDqWwr/ASzhDRJnSzKK3BM3/7Ot2k6aaF4yL7bWA9w90hbLHVx0JxyyYVTSMQr86TKTn+lnkV2h/RMvgZDw=="/>
+            <enclosure url="https://github.com/YuvInv/IN-meetings/releases/download/v1.0.0/INMeetings.zip" length="8791208" type="application/octet-stream" sparkle:edSignature="rKhiJKBNF2z/2OVgHHGSs8RNrVjPF6DPo9U38iApZDnj8EjaBPgJNXSJlBU7oQxnnnd4NBWT2Oqlp8TTB9RAAQ=="/>
         </item>
     </channel>
 </rss>
