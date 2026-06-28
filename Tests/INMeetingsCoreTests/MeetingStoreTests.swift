@@ -123,4 +123,103 @@ final class MeetingStoreTests: XCTestCase {
         XCTAssertEqual(row?.summaryError, "claude not found")
         XCTAssertEqual(row?.summarySessionId, "sess-abc")   // COALESCE preserves the prior session id
     }
+
+    // MARK: - Delete + sort (PR 2)
+
+    /// A lightweight "processing" row with a controllable id + start time, via `markProcessing`'s job.json read.
+    private func makeJobFolder(id: String, startedAt: String) throws -> URL {
+        let dir = URL(filePath: NSTemporaryDirectory())
+            .appending(path: "sorttest-\(UUID().uuidString)").appending(path: id)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let job: [String: Any] = ["meeting_id": id, "profile": "call",
+                                  "started_at": startedAt, "ended_at": startedAt]
+        try JSONSerialization.data(withJSONObject: job).write(to: dir.appending(path: "job.json"))
+        return dir
+    }
+
+    func testDeleteMeetingRemovesRowAndSummaries() throws {
+        let store = try MeetingStore()
+        let rec = try store.indexPackage(at: fixture)
+        try store.upsertSummary(meetingId: rec.id, recipeId: "saventa-summary", state: "done")
+        XCTAssertEqual(try store.allMeetings().count, 1)
+        XCTAssertEqual(try store.summaries(forMeeting: rec.id).count, 1)
+
+        try store.deleteMeeting(id: rec.id)
+
+        XCTAssertNil(try store.meeting(id: rec.id))
+        XCTAssertEqual(try store.allMeetings().count, 0)
+        XCTAssertEqual(try store.summaries(forMeeting: rec.id).count, 0)
+    }
+
+    func testDeleteMeetingIsIdempotent() throws {
+        let store = try MeetingStore()
+        try store.deleteMeeting(id: "never-existed")   // no throw, no-op
+        XCTAssertEqual(try store.allMeetings().count, 0)
+    }
+
+    func testAllMeetingsSortByDateRespectsOrder() throws {
+        let store = try MeetingStore()
+        _ = try store.markProcessing(folder: makeJobFolder(id: "m-old", startedAt: "2026-01-01T10:00:00+00:00"))
+        _ = try store.markProcessing(folder: makeJobFolder(id: "m-new", startedAt: "2026-06-01T10:00:00+00:00"))
+
+        XCTAssertEqual(try store.allMeetings(sortBy: .dateNewest).map(\.id), ["m-new", "m-old"])
+        XCTAssertEqual(try store.allMeetings(sortBy: .dateOldest).map(\.id), ["m-old", "m-new"])
+    }
+
+    // MARK: - Full-text transcript search (FTS5, PR 3)
+
+    func testTranscriptSearchFindsMidTranscriptPhrase() throws {
+        let store = try MeetingStore()
+        _ = try store.indexPackage(at: fixture)
+        // "ARR" appears only in the transcript body, never in the title/company.
+        let hits = try store.searchTranscripts(query: "ARR")
+        XCTAssertFalse(hits.isEmpty)
+        XCTAssertTrue(hits.allSatisfy { $0.meetingId == "golden-package" })
+        XCTAssertTrue(hits.contains { $0.startTime > 0 })          // jump-to-moment time came back as a Double
+    }
+
+    func testTranscriptSearchMatchesHebrew() throws {
+        let store = try MeetingStore()
+        _ = try store.indexPackage(at: fixture)
+        let hits = try store.searchTranscripts(query: "מיליון")    // "million" — appears in the body
+        XCTAssertFalse(hits.isEmpty)
+        XCTAssertEqual(hits.first?.meetingId, "golden-package")
+    }
+
+    func testTranscriptSearchSanitizesPunctuationAndNeverThrows() throws {
+        let store = try MeetingStore()
+        _ = try store.indexPackage(at: fixture)
+        // Raw FTS5 would choke on stray quotes/parens/hyphens — our sanitizer must neutralize them.
+        XCTAssertNoThrow(try store.searchTranscripts(query: "ARR\" ) (ה-"))
+        // A punctuation-only query has no searchable terms → empty, not an error.
+        XCTAssertEqual(try store.searchTranscripts(query: " -) (\" ").count, 0)
+    }
+
+    func testDeleteMeetingRemovesTranscriptSearchRows() throws {
+        let store = try MeetingStore()
+        _ = try store.indexPackage(at: fixture)
+        XCTAssertFalse(try store.searchTranscripts(query: "ARR").isEmpty)
+        try store.deleteMeeting(id: "golden-package")
+        XCTAssertTrue(try store.searchTranscripts(query: "ARR").isEmpty)
+    }
+
+    func testBackfillPopulatesEmptyFtsFromExistingMeetings() throws {
+        let store = try MeetingStore()
+        // A meeting row created WITHOUT indexPackage (so FTS stays empty), pointing at a folder that has a
+        // transcript.json — the exact shape of an old DB predating the FTS index.
+        let dir = URL(filePath: NSTemporaryDirectory())
+            .appending(path: "bf-\(UUID().uuidString)").appending(path: "meeting-x")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir.deletingLastPathComponent()) }
+        try FileManager.default.copyItem(at: fixture.appending(path: "transcript.json"),
+                                         to: dir.appending(path: "transcript.json"))
+        _ = try store.markProcessing(folder: dir)                  // row exists, FTS empty
+        XCTAssertTrue(try store.searchTranscripts(query: "מיליון").isEmpty)
+
+        store.backfillTranscriptSearchIfNeeded()
+
+        let hits = try store.searchTranscripts(query: "מיליון")
+        XCTAssertFalse(hits.isEmpty)
+        XCTAssertEqual(hits.first?.meetingId, "meeting-x")
+    }
 }

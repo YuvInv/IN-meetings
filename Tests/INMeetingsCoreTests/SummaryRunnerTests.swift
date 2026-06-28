@@ -39,6 +39,7 @@ final class SummaryRunnerTests: XCTestCase {
     func testMakeArgumentsHasHeadlessFlags() {
         let args = SummaryRunner.makeArguments(folder: URL(fileURLWithPath: "/tmp/m"),
                                                relativeOutputPath: "summaries/saventa-summary.md",
+                                               actionsOutputPath: "summaries/saventa-summary-actions.json",
                                                systemPrompt: "SYS-PROMPT")
         XCTAssertEqual(args.first, "-p")
         XCTAssertTrue(args.contains("--append-system-prompt"))
@@ -47,6 +48,7 @@ final class SummaryRunnerTests: XCTestCase {
         XCTAssertTrue(args.contains("acceptEdits"))
         XCTAssertEqual(args.last, "json")               // --output-format json
         XCTAssertTrue(args[1].contains("summaries/saventa-summary.md"))   // prompt names the per-recipe path
+        XCTAssertTrue(args[1].contains("summaries/saventa-summary-actions.json"))   // …and the action-items sidecar
     }
 
     func testParseSessionID() {
@@ -151,7 +153,9 @@ final class SummaryRunnerTests: XCTestCase {
         // The prompt must be recipe-agnostic (decision 3 of A2). The output path is the recipe id, but the
         // bundled default ("saventa-summary") is replaced here with a neutral one to keep the assertion sharp.
         let args = SummaryRunner.makeArguments(folder: URL(fileURLWithPath: "/tmp/m"),
-                                               relativeOutputPath: "summaries/short-brief.md", systemPrompt: "SYS")
+                                               relativeOutputPath: "summaries/short-brief.md",
+                                               actionsOutputPath: "summaries/short-brief-actions.json",
+                                               systemPrompt: "SYS")
         let prompt = args[1]   // second element is the -p prompt text
         XCTAssertFalse(prompt.lowercased().contains("saventa"),
                        "makeArguments prompt should be recipe-agnostic, not mention Saventa")

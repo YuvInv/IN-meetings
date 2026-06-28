@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import UserNotifications
 import INMeetingsCore
 
 /// IN-meetings menu-bar app entry point.
@@ -23,6 +24,7 @@ struct INMeetingsApp: App {
     @State private var audioDeviceSettings: AudioDeviceSettings
     @State private var promptCoordinator: MeetingPromptCoordinator
     @State private var endCoordinator: MeetingEndCoordinator
+    @State private var recordingHUD: RecordingHUDCoordinator
     @State private var drive: DriveAuth
     @State private var onboarding: OnboardingModel
     @State private var recipeSettings: SummaryRecipeSettings
@@ -57,6 +59,9 @@ struct INMeetingsApp: App {
         let endCoordinator = MeetingEndCoordinator(detector: detector, recorder: recorder, settings: settings)
         _endCoordinator = State(initialValue: endCoordinator)
         endCoordinator.start()   // float a "Meeting ended — stopping in Ns…" countdown when a recorded call ends
+        let recordingHUD = RecordingHUDCoordinator(recorder: recorder)
+        _recordingHUD = State(initialValue: recordingHUD)
+        recordingHUD.start()   // float the recording HUD (timer + level meters + pause/stop) while recording
         let drive = DriveAuth()
         _drive = State(initialValue: drive)
         _onboarding = State(initialValue: OnboardingModel(drive: drive, models: models))
@@ -96,6 +101,7 @@ struct INMeetingsApp: App {
             DashboardWindow(drive: drive, jobBridge: recorder.jobBridge)
         }
         .windowResizability(.contentSize)
+        .commands { DashboardCommands() }
 
         Window("Set up INV Meetings", id: "onboarding") {
             OnboardingWindow(model: onboarding)
@@ -243,13 +249,30 @@ final class DashboardLauncher {
     var open: (() -> Void)?
     /// Set alongside `open`; calls `openWindow(id: "onboarding")` for the first-run wizard.
     var openOnboarding: (() -> Void)?
+    /// Bound by `DashboardWindow.onAppear`; selects a meeting in the open dashboard.
+    private var onSelectMeeting: ((String) -> Void)?
+    /// Holds a deep-link target that arrived before the dashboard could apply it (cold open).
+    private var pendingMeetingID: String?
+
+    /// Select a meeting (from a notification tap). Applies now if the dashboard is bound, else defers
+    /// until `bindSelectMeeting` is called when the window appears.
+    func selectMeeting(_ id: String) {
+        if let onSelectMeeting { onSelectMeeting(id) } else { pendingMeetingID = id }
+    }
+
+    /// Called by the dashboard once it can apply a selection; drains any pending deep-link target.
+    func bindSelectMeeting(_ handler: @escaping (String) -> Void) {
+        onSelectMeeting = handler
+        if let id = pendingMeetingID { pendingMeetingID = nil; handler(id) }
+    }
+
     private init() {}
 }
 
 /// Hybrid Dock + menu-bar lifecycle. The app is a regular, Dock-visible app (`LSUIElement=false`) that
 /// also lives in the menu bar: closing the dashboard must NOT quit the recorder, and clicking the Dock
 /// icon (re)opens the dashboard. Amends ADR-001/ADR-009 (was a pure `LSUIElement` menu-bar agent).
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     /// Keep the recorder + menu-bar item alive when the dashboard window is closed.
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
@@ -266,12 +289,65 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// so a *login-item* start stays quiet in the background instead of popping the window.) On first run,
     /// also float the onboarding wizard in front (the dashboard stays usable behind it).
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Receive notification taps here, and ask for permission (best-effort, silent if denied).
+        UNUserNotificationCenter.current().delegate = self
+        Task { await MeetingNotifier.shared.requestAuthorization() }
+
         DispatchQueue.main.async {
             DashboardLauncher.shared.open?()
             if !OnboardingModel.hasCompleted() {
                 NSApp.activate(ignoringOtherApps: true)
                 DashboardLauncher.shared.openOnboarding?()
             }
+        }
+    }
+
+    // MARK: - UNUserNotificationCenterDelegate
+
+    /// Show our banners even when the app is frontmost (otherwise macOS suppresses them).
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
+        [.banner, .sound]
+    }
+
+    /// Notification tapped → bring the app forward, open the dashboard, and select that meeting.
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                didReceive response: UNNotificationResponse) async {
+        let id = response.notification.request.content.userInfo[MeetingNotifier.meetingIDKey] as? String
+        await MainActor.run {
+            NSApp.activate(ignoringOtherApps: true)
+            DashboardLauncher.shared.open?()
+            if let id { DashboardLauncher.shared.selectMeeting(id) }
+        }
+    }
+}
+
+/// Carries a "focus the search field" action from the focused dashboard scene up to the app-level menu
+/// commands, so ⌘F can focus search even though `.commands` lives on the scene, not inside the window.
+private struct SearchFocuserKey: FocusedValueKey { typealias Value = () -> Void }
+extension FocusedValues {
+    var searchFocuser: (() -> Void)? {
+        get { self[SearchFocuserKey.self] }
+        set { self[SearchFocuserKey.self] = newValue }
+    }
+}
+
+/// The dashboard's menu commands: a real **Find** (⌘F → focus search) under Edit and a **Show Calendar**
+/// toggle (⌘L) under View. ⌘D (Open Dashboard) and ⌘Q (Quit) stay in the menu-bar menu; ⌘, is the
+/// Settings scene. Standard Edit (Copy/Paste/Select All) and window Close (⌘W) come from SwiftUI defaults.
+struct DashboardCommands: Commands {
+    @FocusedValue(\.searchFocuser) private var searchFocuser
+    @AppStorage("showCalendarPanel") private var showCalendar = false
+
+    var body: some Commands {
+        CommandGroup(after: .textEditing) {
+            Button("Find") { searchFocuser?() }
+                .keyboardShortcut("f", modifiers: .command)
+                .disabled(searchFocuser == nil)
+        }
+        CommandGroup(after: .sidebar) {
+            Toggle("Show Calendar", isOn: $showCalendar)
+                .keyboardShortcut("l", modifiers: .command)
         }
     }
 }

@@ -13,6 +13,8 @@ struct DashboardWindow: View {
     @AppStorage("showCalendarPanel") private var showCalendar = false
     @State private var importing = false
     @State private var pendingEvent: CalendarEvent?
+    /// Bound to the sidebar search field so the ⌘F "Find" menu command can focus it.
+    @FocusState private var searchFieldFocused: Bool
 
     init(drive: DriveAuth, jobBridge: JobBridge) {
         self.drive = drive
@@ -27,12 +29,24 @@ struct DashboardWindow: View {
 
     var body: some View {
         NavigationSplitView {
-            DashboardSidebar(selection: $storeModel.selection)
+            DashboardSidebar(selection: $storeModel.selection, search: $storeModel.search,
+                             searchFocus: $searchFieldFocused)
                 .navigationSplitViewColumnWidth(min: 200, ideal: 230, max: 320)
-                .searchable(text: $storeModel.search, placement: .sidebar, prompt: "Search meetings")
         } detail: {
             content
                 .toolbar {
+                    ToolbarItem(placement: .primaryAction) {
+                        Menu {
+                            Picker("Sort", selection: Binding(
+                                get: { storeModel.sortOrder },
+                                set: { storeModel.sortOrder = $0; storeModel.load() })) {
+                                ForEach(MeetingSortOrder.allCases, id: \.self) { Text($0.label).tag($0) }
+                            }
+                        } label: {
+                            Label("Sort", systemImage: "arrow.up.arrow.down")
+                        }
+                        .help("Sort meetings")
+                    }
                     ToolbarItem(placement: .primaryAction) {
                         Button { showCalendar.toggle() } label: {
                             Label("Calendar", systemImage: "calendar")
@@ -57,7 +71,13 @@ struct DashboardWindow: View {
             set: { if !$0 { storeModel.importError = nil } })) {
             Button("OK", role: .cancel) {}
         } message: { Text(storeModel.importError ?? "") }
-        .onAppear { storeModel.load() }
+        .onAppear {
+            storeModel.load()
+            // Let a notification tap select its meeting in this window (drains any pending deep link).
+            DashboardLauncher.shared.bindSelectMeeting { storeModel.selection = .meeting($0) }
+        }
+        // Expose a focus action so the app-level ⌘F "Find" command can focus the sidebar search field.
+        .focusedSceneValue(\.searchFocuser) { searchFieldFocused = true }
     }
 
     private func handleImport(_ result: Result<[URL], Error>) {
@@ -84,12 +104,15 @@ struct DashboardWindow: View {
 
     @ViewBuilder private var content: some View {
         switch storeModel.selection ?? .allMeetings {
-        case .allMeetings:  MeetingListView(meetings: storeModel.filtered, selection: $storeModel.selection)
+        case .allMeetings:
+            MeetingListView(meetings: storeModel.filtered, selection: $storeModel.selection,
+                            store: storeModel, jobBridge: jobBridge)
         case .queue:
             QueueView(model: queueModel, store: storeModel, jobBridge: jobBridge)
         case .meeting(let id):
-            if let m = storeModel.meeting(id: id) { MeetingDetailView(meeting: m, store: storeModel).id(id) }
-            else { ContentUnavailableView("Meeting not found", systemImage: "questionmark.folder") }
+            if let m = storeModel.meeting(id: id) {
+                MeetingDetailView(meeting: m, store: storeModel, jobBridge: jobBridge).id(id)
+            } else { ContentUnavailableView("Meeting not found", systemImage: "questionmark.folder") }
         }
     }
 }

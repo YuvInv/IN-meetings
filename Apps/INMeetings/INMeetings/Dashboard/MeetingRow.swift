@@ -6,9 +6,16 @@ import INMeetingsCore
 struct MeetingRow: View {
     let meeting: MeetingRecord
     let isSelected: Bool
+    /// The recorder's bridge — supplies the live phase/progress of the active job (determinate bar).
+    let jobBridge: JobBridge
     var body: some View {
         let isProcessing = meeting.status == "processing"
-        HStack(alignment: .top, spacing: 12) {
+        // When this meeting is the one the pipeline is actively running, show its determinate phase +
+        // progress (matching the Queue view); other processing rows render as an indeterminate "Queued".
+        let state: QueueItemState? = isProcessing ? QueuePhase.derive(
+            status: meeting.status, pipelinePhase: jobBridge.phase, pipelineProgress: jobBridge.progress,
+            summaryState: meeting.summaryState, isActive: meeting.id == jobBridge.activeMeetingID) : nil
+        return HStack(alignment: .top, spacing: 12) {
             Group {
                 if isProcessing {
                     ProgressView().controlSize(.small)
@@ -27,10 +34,15 @@ struct MeetingRow: View {
                         Text("· \(t)").font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
                     }
                     Spacer(minLength: 8)
-                    if !isProcessing {
+                    if let state {
+                        Text(state.detailedLabel).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                    } else if !isProcessing {
                         Text(durationString(meeting.durationSeconds))
                             .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                     }
+                }
+                if let p = state?.progress {
+                    ProgressView(value: p).controlSize(.small)
                 }
                 HStack(spacing: 6) {
                     chip(meeting.type == "in_person" ? "in-person" : "call", "phone", .secondary)

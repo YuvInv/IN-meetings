@@ -62,6 +62,20 @@ final class ScreenCaptureKitRecorder: NSObject, SCStreamOutput, SCStreamDelegate
     private var systemStart: CMTime?
     private var micPeak: Float = 0
     private var systemPeak: Float = 0
+    /// Latest per-buffer levels (instantaneous) for the live HUD meter — read under `lock`.
+    private var micCurrent: Float = 0
+    private var systemCurrent: Float = 0
+    /// "Pause" = mute the AUDIO tracks only (write silence): the picture keeps recording so the video
+    /// timeline stays continuous. Known v1 limitation — pause silences audio but not the screen. Read/set
+    /// under `lock` since the capture callbacks run on the sample queue.
+    private var muted = false
+
+    /// Toggle the audio mute gate (thread-safe).
+    func setMuted(_ m: Bool) { lock.lock(); muted = m; lock.unlock() }
+    /// Live mic level (dBFS) for the HUD.
+    var currentMicDB: Float { lock.lock(); defer { lock.unlock() }; return micCurrent > 0 ? 20 * log10(micCurrent) : -120 }
+    /// Live system level (dBFS) for the HUD.
+    var currentSystemDB: Float { lock.lock(); defer { lock.unlock() }; return systemCurrent > 0 ? 20 * log10(systemCurrent) : -120 }
 
     init(directory: URL, bundleID: String, micDeviceUID: String? = nil) {
         self.directory = directory
@@ -224,15 +238,19 @@ final class ScreenCaptureKitRecorder: NSObject, SCStreamOutput, SCStreamDelegate
             }
         }
         lock.lock()
+        let isMuted = muted
+        if isMuted { MicRecorder.silence(pcm) }   // paused → write silence (audio only; video continues)
         if system {
             if systemStart == nil { systemStart = pts }
             if peak > systemPeak { systemPeak = peak }
+            systemCurrent = peak
             if systemFile == nil { systemFile = try? AVAudioFile(forWriting: systemURL, settings: format.settings,
                                                                  commonFormat: format.commonFormat, interleaved: format.isInterleaved) }
             try? systemFile?.write(from: pcm)
         } else {
             if micStart == nil { micStart = pts }
             if peak > micPeak { micPeak = peak }
+            micCurrent = peak
             if micFile == nil { micFile = try? AVAudioFile(forWriting: micURL, settings: format.settings,
                                                            commonFormat: format.commonFormat, interleaved: format.isInterleaved) }
             try? micFile?.write(from: pcm)

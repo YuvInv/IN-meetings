@@ -128,3 +128,27 @@ Seed planned for Q1 2026 - $5M. Scale to $4M ARR within ~18 months, hire 5 more 
 **notes**
 
 ```
+
+## Action items (structured — a SEPARATE file)
+
+In addition to `summary.md` (the Saventa template above — leave it exactly as specified), write the
+meeting's concrete next steps as JSON to the actions file named in the instruction
+(`summaries/<recipeId>-actions.json`). This is a **separate** deliverable and must NOT change the
+`summary.md` template. Use exactly this shape:
+
+```json
+{
+  "items": [
+    {"task": "Send the data room link", "owner": "Yuval", "status": "open", "dueDate": "2026-07-01"},
+    {"task": "Intro to a design partner", "owner": null, "status": "blocked", "dueDate": null}
+  ]
+}
+```
+
+Rules:
+- `task` (required) — one concrete next step actually agreed/mentioned in the call; terse, no preamble.
+- `owner` — the responsible person if named, else `null`. Never invent an owner.
+- `status` — one of `open` | `in-progress` | `done` | `blocked`. Default to `open`.
+- `dueDate` — ISO-8601 (`YYYY-MM-DD`) only if a date was stated, else `null`.
+- If there are no clear action items, write `{"items": []}`. Do not fabricate — same discipline as the
+  summary: only what was said.

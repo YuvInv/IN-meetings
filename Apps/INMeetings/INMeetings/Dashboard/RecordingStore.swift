@@ -12,6 +12,10 @@ final class RecordingStore {
     private(set) var meetings: [MeetingRecord] = []
     var selection: DashboardSelection? = .allMeetings
     var search: String = ""
+    /// The list ordering chosen in the Sort menu; `load()` re-fetches in this order.
+    var sortOrder: MeetingSortOrder = .dateNewest
+    /// A deferred jump target from a transcript search hit: the detail view seeks + scrolls to this moment.
+    var pendingJump: PendingJump?
 
     private let store: MeetingStore?
     private let drive: DriveAuth?
@@ -31,6 +35,7 @@ final class RecordingStore {
         self.jobBridge = jobBridge
         self.registry = registry
         store?.reconcile()   // self-heal: index any meeting whose completion the watcher missed (relaunch)
+        store?.backfillTranscriptSearchIfNeeded()   // one-time: index transcripts that predate the FTS table
         load()
         // Reload when a pipeline job finishes/fails (JobBridge) or a summary completes (SummaryRunner) so
         // newly-done, failed, and summarized meetings appear live without reopening the window.
@@ -43,7 +48,21 @@ final class RecordingStore {
     }
     deinit { observers.forEach { NotificationCenter.default.removeObserver($0) } }
 
-    func load() { meetings = (try? store?.allMeetings()) ?? [] }
+    func load() { meetings = (try? store?.allMeetings(sortBy: sortOrder)) ?? [] }
+
+    /// Delete a meeting from this Mac: its DB rows + the on-disk package folder. The Drive copy is kept
+    /// (it's the shared team archive). If the deleted meeting was selected, fall back to All Meetings.
+    func deleteMeeting(_ meeting: MeetingRecord) {
+        guard let store else { return }
+        do {
+            try store.deleteMeeting(id: meeting.id)
+            try? FileManager.default.removeItem(at: URL(fileURLWithPath: meeting.folderPath))
+            if selection == .meeting(meeting.id) { selection = .allMeetings }
+            load()
+        } catch {
+            NSLog("deleteMeeting failed: \(error)")
+        }
+    }
 
     /// Apply a manual company edit: rewrite metadata.json + index (CompanyEditor), refresh the list, and
     /// (when the meeting is already on Drive) re-upload the corrected metadata.json.
@@ -101,6 +120,12 @@ final class RecordingStore {
         return try? String(contentsOf: folder.appendingPathComponent("summary.md"), encoding: .utf8)
     }
 
+    /// Structured action items for a recipe's run (the `summaries/<recipeId>-actions.json` sidecar), or
+    /// nil when the recipe didn't emit one (older runs / recipes degrade to no action-items section).
+    func actionItems(for meeting: MeetingRecord, recipeId: String) -> ActionItems? {
+        ActionItemsLoader.load(forMeetingFolder: URL(fileURLWithPath: meeting.folderPath), recipeId: recipeId)
+    }
+
     /// All available recipes (bundled + user-supplied) for the "Summarize with…" run menu.
     func recipes() -> [SummaryRecipe] { registry?.all() ?? [] }
 
@@ -117,6 +142,37 @@ final class RecordingStore {
     }
 
     var filtered: [MeetingRecord] { filterMeetings(meetings, search: search) }
+
+    /// Search results across BOTH metadata (company/title/id) and transcript bodies (FTS), in the current
+    /// sort order. A result carries a `snippet` + `jumpTime` when it matched inside the transcript. Empty
+    /// when the search box is empty (callers fall back to the normal list).
+    var searchResults: [SearchResult] {
+        let q = search.trimmingCharacters(in: .whitespaces)
+        guard !q.isEmpty else { return [] }
+        let metaIds = Set(filterMeetings(meetings, search: q).map(\.id))
+        let hits = (try? store?.searchTranscripts(query: q) ?? []) ?? []
+        var firstHit: [String: TranscriptSearchHit] = [:]
+        for h in hits where firstHit[h.meetingId] == nil { firstHit[h.meetingId] = h }
+        return meetings.compactMap { m in
+            let hit = firstHit[m.id]
+            guard metaIds.contains(m.id) || hit != nil else { return nil }
+            return SearchResult(meeting: m, snippet: hit?.snippet, jumpTime: hit?.startTime)
+        }
+    }
+
+    /// Open a search result: when it matched inside the transcript, queue a jump to that moment, then select.
+    func openSearchResult(_ result: SearchResult) {
+        if let t = result.jumpTime { pendingJump = PendingJump(meetingId: result.meeting.id, time: t) }
+        selection = .meeting(result.meeting.id)
+    }
+
+    /// Return + clear the pending jump time for `id` (set when a transcript search hit was opened).
+    func consumePendingJump(for id: String) -> Double? {
+        guard pendingJump?.meetingId == id else { return nil }
+        let t = pendingJump?.time
+        pendingJump = nil
+        return t
+    }
 
     func meeting(id: String) -> MeetingRecord? { meetings.first { $0.id == id } }
     func transcript(for r: MeetingRecord) -> TranscriptPackage? {
@@ -140,6 +196,47 @@ final class RecordingStore {
             NSLog("renameSpeaker failed: \(error)")
         }
     }
+
+    /// Edit a single transcript utterance's text: persist to transcript.json, refresh the view + FTS
+    /// search index, and (when on Drive) re-upload the corrected transcript. Mirrors `renameSpeaker`.
+    func editUtterance(_ newText: String, at index: Int, for meeting: MeetingRecord) {
+        let folder = URL(fileURLWithPath: meeting.folderPath)
+        do {
+            let data = try TranscriptEditor.setUtteranceText(newText, at: index, in: folder)
+            store?.reindexTranscriptSearch(meetingId: meeting.id, folder: folder)
+            load()
+            if let drive, drive.isConnected, let folderID = meeting.driveFolderId {
+                Task { await drive.reuploadPackageFile("transcript.json", data: data, meetingFolderID: folderID) }
+            }
+        } catch {
+            NSLog("editUtterance failed: \(error)")
+        }
+    }
+
+    /// Replace `find` with `replaceWith` across this meeting's transcript (optionally case-sensitive);
+    /// when `learnCorrection` is set, also remember it so FUTURE meetings auto-correct (the pipeline reads
+    /// the same vocab file). Persists, refreshes the view + FTS, re-uploads to Drive. Returns the count.
+    @discardableResult
+    func findAndReplaceInTranscript(find: String, replaceWith: String, caseSensitive: Bool,
+                                    learnCorrection: Bool, for meeting: MeetingRecord) -> Int {
+        let folder = URL(fileURLWithPath: meeting.folderPath)
+        do {
+            let (data, count) = try TranscriptEditor.findAndReplace(
+                find: find, replaceWith: replaceWith, caseSensitive: caseSensitive, in: folder)
+            guard count > 0 else { return 0 }
+            if learnCorrection { try? VocabStore().learn(canonical: replaceWith, variant: find) }
+            store?.reindexTranscriptSearch(meetingId: meeting.id, folder: folder)
+            load()
+            if let drive, drive.isConnected, let folderID = meeting.driveFolderId {
+                Task { await drive.reuploadPackageFile("transcript.json", data: data, meetingFolderID: folderID) }
+            }
+            return count
+        } catch {
+            NSLog("findAndReplaceInTranscript failed: \(error)")
+            return 0
+        }
+    }
+
     /// The merged playback file for a meeting: the muxed video (`meeting.mp4`) if present, else the mixed
     /// audio (`audio.m4a`). nil until the renderer has produced one.
     func playbackURL(for r: MeetingRecord) -> URL? {
@@ -192,6 +289,21 @@ enum DashboardSelection: Hashable {
     case allMeetings
     case queue
     case meeting(String)
+}
+
+/// One row in the search-results list: the meeting plus, when matched inside the transcript, an excerpt
+/// snippet and the time to jump to.
+struct SearchResult: Identifiable {
+    let meeting: MeetingRecord
+    let snippet: String?
+    let jumpTime: Double?
+    var id: String { meeting.id }
+}
+
+/// A pending transcript jump: the detail view seeks the player to `time` and scrolls the transcript there.
+struct PendingJump {
+    let meetingId: String
+    let time: Double
 }
 
 // MARK: - Private helpers

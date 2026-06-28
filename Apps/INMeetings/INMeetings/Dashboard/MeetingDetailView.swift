@@ -3,11 +3,14 @@
 import SwiftUI
 import AVKit
 import AppKit
+import UniformTypeIdentifiers
 import INMeetingsCore
 
 struct MeetingDetailView: View {
     let meeting: MeetingRecord
     let store: RecordingStore
+    /// The recorder's bridge — supplies the live phase/progress shown in the header while processing.
+    let jobBridge: JobBridge
     @State private var player: AVPlayer?
     @State private var currentTime: Double = 0
     @State private var observer: Any?
@@ -26,7 +29,24 @@ struct MeetingDetailView: View {
     @State private var selectedRecipeId: String?
     /// Confirmation presented before deleting a summary.
     @State private var confirmDeleteRecipeId: String?
+    /// Confirmation presented before deleting the whole meeting.
+    @State private var confirmDeleteMeeting = false
+    /// A transcript moment to scroll/seek to, set when the meeting was opened from a search hit.
+    @State private var jumpTime: Double?
+    /// The utterance index currently being edited inline (nil = no editor open) + its working text.
+    @State private var editingUtteranceIndex: Int?
+    @State private var editingText = ""
+    /// Presents the find-&-replace sheet.
+    @State private var showFindReplace = false
     private var pkg: TranscriptPackage? { store.transcript(for: meeting) }
+
+    /// The live processing state for this meeting (nil unless it's currently being processed).
+    private var processingState: QueueItemState? {
+        guard meeting.status == "processing" else { return nil }
+        return QueuePhase.derive(status: meeting.status, pipelinePhase: jobBridge.phase,
+                                 pipelineProgress: jobBridge.progress, summaryState: meeting.summaryState,
+                                 isActive: meeting.id == jobBridge.activeMeetingID)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -37,6 +57,8 @@ struct MeetingDetailView: View {
         .onAppear {
             configure()
             syncSelectedEntry()
+            // Opened from a transcript search hit → seek the player there; the transcript scrolls via jumpTime.
+            if let t = store.consumePendingJump(for: meeting.id) { jumpTime = t; seek(to: t) }
         }
         .onDisappear(perform: teardown)
         // When entries change (a new summary finishes via .summaryDidFinish → store reloads), keep the
@@ -63,6 +85,26 @@ struct MeetingDetailView: View {
             Button("Cancel", role: .cancel) { confirmDeleteRecipeId = nil }
         } message: {
             Text("This removes the summary from your device. The copy on Drive (if any) is not affected.")
+        }
+        .alert("Delete meeting?", isPresented: $confirmDeleteMeeting) {
+            Button("Delete", role: .destructive) { store.deleteMeeting(meeting) }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Removes this meeting from this Mac. The copy on Google Drive is kept.")
+        }
+        .sheet(isPresented: Binding(
+            get: { editingUtteranceIndex != nil }, set: { if !$0 { editingUtteranceIndex = nil } })) {
+            EditUtteranceSheet(text: $editingText, isHebrew: pkg?.language == "he") {
+                if let i = editingUtteranceIndex { store.editUtterance(editingText, at: i, for: meeting) }
+                editingUtteranceIndex = nil
+            } onCancel: { editingUtteranceIndex = nil }
+        }
+        .sheet(isPresented: $showFindReplace) {
+            FindReplaceSheet { find, replaceWith, caseSensitive, learn in
+                store.findAndReplaceInTranscript(find: find, replaceWith: replaceWith,
+                                                 caseSensitive: caseSensitive, learnCorrection: learn,
+                                                 for: meeting)
+            }
         }
     }
 
@@ -262,11 +304,15 @@ struct MeetingDetailView: View {
                     default:
                         if let text = store.summaryText(for: meeting, recipeId: sel.id) {
                             ScrollView {
-                                Text(text).font(.system(.body, design: .monospaced)).textSelection(.enabled)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                VStack(alignment: .leading, spacing: 10) {
+                                    Text(text).font(.system(.body, design: .monospaced)).textSelection(.enabled)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                    actionItemsSection(recipeId: sel.id)
+                                }
                             }
                         } else {
                             Text("Summary text not found.").font(.callout).foregroundStyle(.secondary)
+                            actionItemsSection(recipeId: sel.id)
                             Spacer()
                         }
                     }
@@ -312,6 +358,59 @@ struct MeetingDetailView: View {
         }
     }
 
+    /// Read-only checklist of the recipe's structured action items (PR 7), shown below the summary text.
+    /// Renders nothing when the recipe didn't emit a sidecar or it has no items — so old runs/recipes
+    /// degrade silently.
+    @ViewBuilder private func actionItemsSection(recipeId: String) -> some View {
+        if let actions = store.actionItems(for: meeting, recipeId: recipeId), !actions.items.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                Divider()
+                Label("Action Items", systemImage: "checklist").font(.subheadline.weight(.semibold))
+                ForEach(Array(actions.items.enumerated()), id: \.offset) { _, item in
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Image(systemName: actionStatusGlyph(item.status))
+                            .foregroundStyle(actionStatusColor(item.status))
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(item.task).font(.callout)
+                            HStack(spacing: 12) {
+                                if let owner = item.owner, !owner.isEmpty {
+                                    Label(owner, systemImage: "person.fill")
+                                        .font(.caption2).foregroundStyle(.secondary)
+                                }
+                                if let due = item.dueDate, !due.isEmpty {
+                                    Label(due, systemImage: "calendar")
+                                        .font(.caption2).foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                        Spacer()
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    /// SF Symbol for an action-item status.
+    private func actionStatusGlyph(_ status: String) -> String {
+        switch status {
+        case "done": return "checkmark.circle.fill"
+        case "in-progress": return "circle.lefthalf.filled"
+        case "blocked": return "exclamationmark.octagon.fill"
+        default: return "circle"   // open / unknown
+        }
+    }
+
+    /// Color for an action-item status glyph.
+    private func actionStatusColor(_ status: String) -> Color {
+        switch status {
+        case "done": return .green
+        case "in-progress": return .accentColor
+        case "blocked": return .red
+        default: return .secondary   // open / unknown
+        }
+    }
+
     /// SF Symbol for a summary state glyph in the switcher.
     private func stateGlyph(_ state: String) -> String {
         switch state {
@@ -349,8 +448,15 @@ struct MeetingDetailView: View {
                             .foregroundStyle(meeting.company?.isEmpty == false ? .primary : .secondary)
                     }.buttonStyle(.plain)
                 }
-                Text("\(meeting.title ?? "Meeting") · \(durationString(meeting.durationSeconds))")
-                    .font(.callout).foregroundStyle(.secondary)
+                if let state = processingState {
+                    HStack(spacing: 8) {
+                        if let p = state.progress { ProgressView(value: p).frame(width: 120) }
+                        Text(state.detailedLabel).font(.callout).foregroundStyle(.secondary)
+                    }
+                } else {
+                    Text("\(meeting.title ?? "Meeting") · \(durationString(meeting.durationSeconds))")
+                        .font(.callout).foregroundStyle(.secondary)
+                }
             }
             Spacer()
             if summaryHasContent {
@@ -360,23 +466,47 @@ struct MeetingDetailView: View {
             }
             Button { copyTranscript() } label: { Label("Copy", systemImage: "doc.on.doc") }
                 .buttonStyle(.glass)
+            if pkg?.utterances.isEmpty == false {
+                Button { showFindReplace = true } label: {
+                    Label("Find & Replace", systemImage: "text.magnifyingglass")
+                }
+                .labelStyle(.iconOnly).buttonStyle(.glass)
+                .help("Find and replace text across this transcript")
+            }
+            Menu {
+                Button("Export Markdown…") { exportMeeting(asPDF: false) }
+                Button("Export PDF…") { exportMeeting(asPDF: true) }
+            } label: { Label("Export", systemImage: "square.and.arrow.up") }
+                .menuStyle(.button).buttonStyle(.glass).fixedSize()
+                .help("Export this meeting as Markdown or PDF")
             Button { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: meeting.folderPath)]) }
                 label: { Label("Reveal", systemImage: "folder") }.buttonStyle(.glass)
+            Button(role: .destructive) { confirmDeleteMeeting = true } label: { Label("Delete", systemImage: "trash") }
+                .buttonStyle(.glass).help("Delete this meeting from this Mac")
         }.padding()
     }
 
     @ViewBuilder private var transcriptArea: some View {
         if let us = pkg?.utterances, !us.isEmpty {
             let speakers = Dictionary(uniqueKeysWithValues: (pkg?.speakers ?? []).map { ($0.id, $0) })
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 4) {
-                    ForEach(Array(us.enumerated()), id: \.offset) { i, u in
-                        TranscriptSegmentView(utterance: u, speaker: speakers[u.speakerId],
-                                              isActive: currentTime >= u.start && currentTime < u.end,
-                                              onTap: { seek(to: u.start) })
-                    }
-                }.padding()
-                .environment(\.layoutDirection, pkg?.language == "he" ? .rightToLeft : .leftToRight)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 4) {
+                        ForEach(Array(us.enumerated()), id: \.offset) { i, u in
+                            TranscriptSegmentView(utterance: u, speaker: speakers[u.speakerId],
+                                                  isActive: currentTime >= u.start && currentTime < u.end,
+                                                  onTap: { seek(to: u.start) },
+                                                  onEdit: { editingText = u.text; editingUtteranceIndex = i })
+                                .id(i)
+                        }
+                    }.padding()
+                    .environment(\.layoutDirection, pkg?.language == "he" ? .rightToLeft : .leftToRight)
+                }
+                // Scroll to the matched utterance when opened from a search hit.
+                .onChange(of: jumpTime, initial: true) { _, t in
+                    guard let t, let idx = activeUtteranceIndex(in: us, at: t) else { return }
+                    withAnimation { proxy.scrollTo(idx, anchor: .center) }
+                }
             }
         } else if meeting.status == "failed" {
             ContentUnavailableView {
@@ -430,6 +560,35 @@ struct MeetingDetailView: View {
     private func copySummary(_ text: String) {
         NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string)
     }
+
+    /// Export the meeting (transcript + summary + metadata) to a file the user picks. Markdown is written
+    /// directly; PDF is rendered from the Core-built HTML (RTL for Hebrew) via an offscreen WKWebView.
+    private func exportMeeting(asPDF: Bool) {
+        let folder = URL(fileURLWithPath: meeting.folderPath)
+        let ext = asPDF ? "pdf" : "md"
+        guard let url = savePanelURL(ext: ext) else { return }
+        if asPDF {
+            guard let html = MeetingExport.html(folder: folder, company: meeting.company,
+                                                fallbackTitle: meeting.title,
+                                                durationSeconds: meeting.durationSeconds) else { return }
+            PDFExporter.write(html: html, to: url)
+        } else {
+            guard let md = MeetingExport.markdown(folder: folder, company: meeting.company,
+                                                  fallbackTitle: meeting.title,
+                                                  durationSeconds: meeting.durationSeconds) else { return }
+            try? md.data(using: .utf8)?.write(to: url, options: .atomic)
+        }
+    }
+
+    /// Prompt for a save location, pre-filled with a meeting-derived filename.
+    private func savePanelURL(ext: String) -> URL? {
+        let panel = NSSavePanel()
+        let stem = MeetingExport.filenameStem(company: meeting.company, title: meeting.title,
+                                              startedAtISO: meeting.startedAt)
+        panel.nameFieldStringValue = "\(stem).\(ext)"
+        if let type = UTType(filenameExtension: ext) { panel.allowedContentTypes = [type] }
+        return panel.runModal() == .OK ? panel.url : nil
+    }
     private func commitCompany() {
         isEditingCompany = false
         store.setCompany(draftCompany, for: meeting)
@@ -452,5 +611,67 @@ private struct PlayerView: NSViewRepresentable {
     }
     func updateNSView(_ nsView: AVPlayerView, context: Context) {
         if nsView.player !== player { nsView.player = player }
+    }
+}
+
+/// Inline editor for a single transcript line. RTL for Hebrew so the caret and text behave naturally.
+private struct EditUtteranceSheet: View {
+    @Binding var text: String
+    let isHebrew: Bool
+    let onSave: () -> Void
+    let onCancel: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Edit transcript line").font(.headline)
+            TextEditor(text: $text)
+                .font(.body)
+                .frame(minWidth: 440, minHeight: 140)
+                .environment(\.layoutDirection, isHebrew ? .rightToLeft : .leftToRight)
+                .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.3)))
+            HStack {
+                Spacer()
+                Button("Cancel", role: .cancel) { onCancel() }.keyboardShortcut(.cancelAction)
+                Button("Save") { onSave() }.keyboardShortcut(.defaultAction).buttonStyle(.borderedProminent)
+            }
+        }
+        .padding(20)
+    }
+}
+
+/// Find & replace across the whole transcript, with an opt-in to remember the correction so future
+/// meetings auto-apply it (the pipeline's post-correction reads the learned vocabulary).
+private struct FindReplaceSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var find = ""
+    @State private var replaceWith = ""
+    @State private var caseSensitive = false
+    @State private var learn = false
+    @State private var resultCount: Int?
+    /// Performs the replacement and returns the number of occurrences replaced.
+    let onReplace: (_ find: String, _ replaceWith: String, _ caseSensitive: Bool, _ learn: Bool) -> Int
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Find & Replace").font(.headline)
+            Form {
+                TextField("Find", text: $find)
+                TextField("Replace with", text: $replaceWith)
+                Toggle("Case-sensitive", isOn: $caseSensitive)
+                Toggle("Remember this correction for future meetings", isOn: $learn)
+            }
+            if let n = resultCount {
+                Text(n == 0 ? "No matches." : "Replaced \(n) occurrence\(n == 1 ? "" : "s").")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            HStack {
+                Spacer()
+                Button("Done") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button("Replace All") { resultCount = onReplace(find, replaceWith, caseSensitive, learn) }
+                    .keyboardShortcut(.defaultAction).buttonStyle(.borderedProminent)
+                    .disabled(find.isEmpty)
+            }
+        }
+        .padding(20).frame(minWidth: 400)
     }
 }

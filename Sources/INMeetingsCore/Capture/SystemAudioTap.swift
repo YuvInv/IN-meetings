@@ -44,6 +44,11 @@ final class SystemAudioTap {
     private(set) var ioCalls = 0
     private(set) var framesWritten: Int64 = 0
     private(set) var peak: Float = 0
+    /// Latest per-callback peak (instantaneous) — drives the live recording-HUD meter.
+    private(set) var currentLevel: Float = 0
+    /// "Pause" = mute: while true the tap keeps draining + metering, but writes SILENCE so `system.wav`
+    /// keeps a continuous timeline (a silent gap) aligned with the mic/video tracks.
+    var muted = false
     private(set) var lastWriteError: String?
 
     private var tapID = AudioObjectID(kAudioObjectUnknown)
@@ -59,6 +64,8 @@ final class SystemAudioTap {
 
     /// Peak as dBFS over the whole capture (−120 if pure silence).
     var peakDB: Float { peak > 0 ? 20 * log10(peak) : -120 }
+    /// Instantaneous level as dBFS for the live HUD meter.
+    var currentDB: Float { currentLevel > 0 ? 20 * log10(currentLevel) : -120 }
 
     func start() throws {
         // Whole-system stereo mix tap (for per-process, pass the PIDs to exclude/include).
@@ -120,12 +127,18 @@ final class SystemAudioTap {
                                              deallocator: nil) else { return }
             self.framesWritten += Int64(buf.frameLength)
             let abl = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: inInputData))
+            var frameMax: Float = 0
             for b in abl {
                 if let data = b.mData {
                     let n = Int(b.mDataByteSize) / MemoryLayout<Float>.size
                     let p = data.assumingMemoryBound(to: Float.self)
-                    for i in 0..<n { let v = abs(p[i]); if v > self.peak { self.peak = v } }
+                    for i in 0..<n { let v = abs(p[i]); if v > frameMax { frameMax = v } }
                 }
+            }
+            if frameMax > self.peak { self.peak = frameMax }
+            self.currentLevel = frameMax          // live HUD level (from the real signal)
+            if self.muted {                        // paused → overwrite with silence, keep the timeline
+                for b in abl { if let data = b.mData { memset(data, 0, Int(b.mDataByteSize)) } }
             }
             do { try self.file?.write(from: buf) }
             catch { if self.lastWriteError == nil { self.lastWriteError = "\(error)" } }

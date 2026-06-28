@@ -82,35 +82,4 @@ struct AudioSettingsTab: View {
     }
 }
 
-/// A simple horizontal VU bar: maps dBFS (−60…0) to a 0…1 fill with a green→yellow→red tint, so a glance
-/// tells you the mic is live and not clipping.
-private struct LevelBar: View {
-    /// Current level in dBFS (−120 when silent).
-    let db: Float
-
-    private var fraction: Double {
-        // Clamp the useful range to −60…0 dBFS.
-        let clamped = min(max(Double(db), -60), 0)
-        return (clamped + 60) / 60
-    }
-
-    private var tint: Color {
-        if db > -6 { return .red }
-        if db > -18 { return .yellow }
-        return .green
-    }
-
-    var body: some View {
-        GeometryReader { geo in
-            ZStack(alignment: .leading) {
-                RoundedRectangle(cornerRadius: 4)
-                    .fill(.quaternary)
-                RoundedRectangle(cornerRadius: 4)
-                    .fill(tint)
-                    .frame(width: geo.size.width * fraction)
-                    .animation(.linear(duration: 0.1), value: fraction)
-            }
-        }
-        .frame(height: 10)
-    }
-}
+// `LevelBar` (the live VU meter) is shared with the recording HUD — see LevelBar.swift.

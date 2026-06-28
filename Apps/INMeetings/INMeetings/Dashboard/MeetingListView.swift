@@ -6,34 +6,139 @@ import INMeetingsCore
 struct MeetingListView: View {
     let meetings: [MeetingRecord]
     @Binding var selection: DashboardSelection?
+    let store: RecordingStore
+    let jobBridge: JobBridge
+    /// Meeting pending a delete confirmation (set from the row context menu).
+    @State private var pendingDelete: MeetingRecord?
+
     var body: some View {
-        let buckets = bucketMeetingsByDate(meetings, now: Date())
         ScrollView {
-            if meetings.isEmpty {
+            if !store.search.trimmingCharacters(in: .whitespaces).isEmpty {
+                searchResultsList
+            } else if meetings.isEmpty {
                 ContentUnavailableView("Nothing here yet", systemImage: "tray",
                                        description: Text("New meetings will appear here."))
                     .padding(.top, 60)
+            } else if store.sortOrder == .dateNewest || store.sortOrder == .dateOldest {
+                bucketedList
             } else {
-                VStack(alignment: .leading, spacing: 22) {
-                    ForEach(buckets, id: \.label) { bucket in
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text(bucket.label).font(.subheadline.weight(.medium))
-                                .foregroundStyle(.secondary).padding(.leading, 4)
-                            GlassEffectContainer {
-                                VStack(spacing: 0) {
-                                    ForEach(bucket.items, id: \.id) { m in
-                                        MeetingRow(meeting: m, isSelected: selection == .meeting(m.id))
-                                            .onTapGesture { selection = .meeting(m.id) }
-                                        if m.id != bucket.items.last?.id { Divider().padding(.leading, 36) }
-                                    }
-                                }
-                                .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 12))
-                            }
-                        }
-                    }
-                }
-                .padding(20)
+                flatList
             }
         }
+        .alert("Delete meeting?", isPresented: Binding(
+            get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } })) {
+            Button("Delete", role: .destructive) { if let m = pendingDelete { store.deleteMeeting(m) }; pendingDelete = nil }
+            Button("Cancel", role: .cancel) { pendingDelete = nil }
+        } message: {
+            Text("Removes this meeting from this Mac. The copy on Google Drive is kept.")
+        }
+    }
+
+    /// Date-bucketed (Today / Yesterday / …). `bucketMeetingsByDate` is newest-first; for the oldest-first
+    /// order we reverse both the bucket order and each bucket's items (without rebuilding the bucket type,
+    /// whose memberwise init is internal to the Core module).
+    private var bucketedList: some View {
+        let buckets = bucketMeetingsByDate(meetings, now: Date())
+        let oldestFirst = store.sortOrder == .dateOldest
+        let ordered = oldestFirst ? Array(buckets.reversed()) : buckets
+        return VStack(alignment: .leading, spacing: 22) {
+            ForEach(ordered, id: \.label) { bucket in
+                let items = oldestFirst ? Array(bucket.items.reversed()) : bucket.items
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(bucket.label).font(.subheadline.weight(.medium))
+                        .foregroundStyle(.secondary).padding(.leading, 4)
+                    rowsContainer(items)
+                }
+            }
+        }
+        .padding(20)
+    }
+
+    /// Results for the active search query: title/company matches AND full-text transcript hits, each
+    /// with an excerpt snippet. Selecting a transcript hit jumps the detail view to that moment.
+    private var searchResultsList: some View {
+        let results = store.searchResults
+        return VStack(alignment: .leading, spacing: 6) {
+            if results.isEmpty {
+                ContentUnavailableView.search(text: store.search)
+                    .padding(.top, 60)
+            } else {
+                Text(results.count == 1 ? "1 result" : "\(results.count) results")
+                    .font(.subheadline.weight(.medium)).foregroundStyle(.secondary).padding(.leading, 4)
+                VStack(spacing: 0) {
+                    ForEach(results) { result in
+                        SearchResultRow(result: result, isSelected: selection == .meeting(result.meeting.id))
+                            .onTapGesture { store.openSearchResult(result) }
+                            .contextMenu {
+                                Button(role: .destructive) { pendingDelete = result.meeting } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                            }
+                        if result.id != results.last?.id { Divider().padding(.leading, 30) }
+                    }
+                }
+            }
+        }
+        .padding(20)
+    }
+
+    /// Flat, single-section list for the non-date orders (company / duration / status). The list is
+    /// already sorted at the data layer; we render it in order with no date headers.
+    private var flatList: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            rowsContainer(meetings)
+        }
+        .padding(20)
+    }
+
+    /// Content rows sit on the standard control surface — NOT Liquid Glass. Per the macOS 26 HIG, glass
+    /// is for the navigation/chrome layer (toolbars, sidebars, the floating overlays), never for content
+    /// lists; a non-glass card here matches the inset Queue list and reads as correctly native.
+    @ViewBuilder private func rowsContainer(_ items: [MeetingRecord]) -> some View {
+        VStack(spacing: 0) {
+            ForEach(items, id: \.id) { m in
+                MeetingRow(meeting: m, isSelected: selection == .meeting(m.id), jobBridge: jobBridge)
+                    .onTapGesture { selection = .meeting(m.id) }
+                    .contextMenu {
+                        Button(role: .destructive) { pendingDelete = m } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                    }
+                if m.id != items.last?.id { Divider().padding(.leading, 36) }
+            }
+        }
+        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
+    }
+}
+
+/// A single search-results row: company/title plus the matched transcript excerpt (when the hit came
+/// from inside the meeting), so the user sees *why* it matched before opening.
+private struct SearchResultRow: View {
+    let result: SearchResult
+    let isSelected: Bool
+
+    var body: some View {
+        let m = result.meeting
+        let primary = m.company?.isEmpty == false ? m.company! : (m.title ?? "Untitled")
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 6) {
+                Image(systemName: m.type == "in_person" ? "person.wave.2" : "phone")
+                    .font(.caption).foregroundStyle(.tint)
+                Text(primary).font(.headline).lineLimit(1)
+                if let t = m.title, !t.isEmpty, m.company?.isEmpty == false {
+                    Text("· \(t)").font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                }
+                Spacer(minLength: 8)
+            }
+            if let snippet = result.snippet, !snippet.isEmpty {
+                Text(snippet).font(.callout).foregroundStyle(.secondary).lineLimit(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .padding(.horizontal, 12).padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(isSelected ? Color.accentColor.opacity(0.18) : .clear,
+                    in: RoundedRectangle(cornerRadius: 8))
+        .contentShape(Rectangle())
     }
 }

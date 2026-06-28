@@ -46,6 +46,12 @@ public enum QueueItemState: Equatable, Sendable {
         default:                   return nil
         }
     }
+
+    /// Label with a percentage appended when progress is determinate, e.g. "Transcribing 40%".
+    public var detailedLabel: String {
+        if let p = progress { return "\(label) \(Int((p * 100).rounded()))%" }
+        return label
+    }
 }
 
 /// Namespace for the pipeline-phase derivation function.
