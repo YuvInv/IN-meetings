@@ -164,7 +164,10 @@ jobs:
         if: env.HAS_SPARKLE == 'true'
         run: |
           APP_PATH="DerivedData/Build/Products/Release/INV Meetings.app"
-          ditto -c -k --keepParent "$APP_PATH" dist/INMeetings.zip
+          # Isolate the .zip in its own dir — generate_appcast errors if it sees both the .zip and the .dmg
+          # with the same version ("Duplicate updates are not supported").
+          mkdir -p dist/sparkle
+          ditto -c -k --keepParent "$APP_PATH" dist/sparkle/INMeetings.zip
 
       # Generate the EdDSA-signed appcast and publish it to the gh-pages branch (GitHub Pages serves it
       # at the SUFeedURL the app points to). Account-INdependent — needs only SPARKLE_ED_PRIVATE_KEY.
@@ -175,27 +178,28 @@ jobs:
           SPARKLE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          # Download Sparkle CLI tools (adjust version as needed)
-          SPARKLE_VERSION="2.7.4"
-          curl -sL \
+          # Sparkle CLI tools — the tarball lays generate_appcast out under bin/ (not Sparkle/bin/).
+          SPARKLE_VERSION="2.6.4"
+          curl --fail -sL \
             "https://github.com/sparkle-project/Sparkle/releases/download/${SPARKLE_VERSION}/Sparkle-${SPARKLE_VERSION}.tar.xz" \
-            | tar -xJ Sparkle/bin/generate_appcast
-          # generate_appcast reads the EdDSA key from the environment
-          echo "$SPARKLE_KEY" | \
-            ./Sparkle/bin/generate_appcast dist/ \
+            | tar -xJ bin/generate_appcast
+          # Sign + generate the appcast from the dir holding ONLY the .zip (printf avoids a trailing
+          # newline corrupting the key read from stdin).
+          printf '%s' "$SPARKLE_KEY" | \
+            ./bin/generate_appcast dist/sparkle/ \
               --ed-key-file /dev/stdin \
               --download-url-prefix \
                 "https://github.com/${{ github.repository }}/releases/download/${RELEASE_TAG}/" \
               --link "https://yuvinv.github.io/IN-meetings/appcast.xml"
-          # Push appcast.xml to gh-pages
-          git config user.name  "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git fetch origin gh-pages 2>/dev/null || git checkout --orphan gh-pages
-          git checkout gh-pages
-          cp dist/appcast.xml appcast.xml
+          # Publish appcast.xml to gh-pages (served at the SUFeedURL).
+          git fetch origin gh-pages
+          git checkout -B gh-pages FETCH_HEAD
+          cp dist/sparkle/appcast.xml appcast.xml
           git add appcast.xml
-          git commit -m "chore(sparkle): update appcast for ${RELEASE_TAG}"
-          git push origin gh-pages
+          git -c user.name="github-actions[bot]" \
+              -c user.email="github-actions[bot]@users.noreply.github.com" \
+              commit -m "chore(sparkle): appcast for ${RELEASE_TAG}" || echo "appcast unchanged"
+          git push origin HEAD:gh-pages
 
       # ── 10. Publish GitHub Release ───────────────────────────────────────────
       # Always runs (unsigned path). If the account-gated steps ran, also attaches
@@ -226,6 +230,6 @@ jobs:
           files: |
             dist/INMeetings.dmg
             dist/INMeetings-signed.dmg
-            dist/INMeetings.zip
+            dist/sparkle/INMeetings.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
