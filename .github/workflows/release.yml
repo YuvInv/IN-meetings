@@ -85,7 +85,9 @@ jobs:
       - name: Build unsigned .dmg (make dmg)
         env:
           GOOGLE_PICKER_API_KEY: ${{ secrets.GOOGLE_PICKER_API_KEY }}
-        run: make dmg
+        # CODESIGN=none: the runner has no Apple account, so build unsigned (the signing/notarization steps
+        # below add Developer ID when the account secrets exist).
+        run: make dmg CODESIGN=none
 
       # ── 5. Verify artifact exists ────────────────────────────────────────────
       - name: Verify dist/INMeetings.dmg
