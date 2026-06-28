@@ -8,6 +8,12 @@ options:
 packages:
   INMeetingsCore:
     path: ../..
+  # Sparkle 2 — in-app auto-update. Update security is EdDSA-based (independent of Apple
+  # Developer-ID/notarization), so updates work for the internal unsigned builds too once a
+  # signed appcast is published; the $99 account only gates a Gatekeeper-clean first install.
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    from: "2.6.0"
 
 schemes:
   INMeetings-App:
@@ -39,6 +45,7 @@ targets:
         buildPhase: resources
     dependencies:
       - package: INMeetingsCore
+      - package: Sparkle
     settings:
       base:
         PRODUCT_NAME: "INV Meetings"

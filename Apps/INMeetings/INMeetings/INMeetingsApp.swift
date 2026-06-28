@@ -1,6 +1,8 @@
 import SwiftUI
 import AppKit
+import Combine
 import UserNotifications
+import Sparkle
 import INMeetingsCore
 
 /// IN-meetings menu-bar app entry point.
@@ -33,6 +35,10 @@ struct INMeetingsApp: App {
     @State private var dictationSettings: DictationSettings
     @State private var dictationController: DictationController
     @State private var dictationOverlay: DictationOverlayCoordinator
+    /// Sparkle auto-updater. `startingUpdater: true` begins background checks per the Info.plist
+    /// (`SUEnableAutomaticChecks`/`SUScheduledCheckInterval`/`SUFeedURL`). EdDSA-verified, so it works for
+    /// the unsigned internal builds once a signed appcast is served — independent of the Apple account.
+    @State private var updaterController: SPUStandardUpdaterController
     private let launchAtLogin: SystemLaunchAtLogin = SystemLaunchAtLogin()
 
     init() {
@@ -86,12 +92,18 @@ struct INMeetingsApp: App {
         let dictationOverlay = DictationOverlayCoordinator(controller: dictationController)
         _dictationOverlay = State(initialValue: dictationOverlay)
         dictationOverlay.start()   // float the dictation status pill while a clip is active
+
+        // Start Sparkle (background update checks per Info.plist). No user driver delegate — the standard
+        // controller shows Sparkle's own update UI.
+        _updaterController = State(initialValue: SPUStandardUpdaterController(
+            startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil))
     }
 
     var body: some Scene {
         MenuBarExtra {
             MenuContent(detector: detector, recorder: recorder, models: models,
-                        settings: promptSettings, drive: drive, dictation: dictationSettings)
+                        settings: promptSettings, drive: drive, dictation: dictationSettings,
+                        updater: updaterController.updater)
         } label: {
             MenuBarLabel(detector: detector, recorder: recorder)
         }
@@ -101,7 +113,12 @@ struct INMeetingsApp: App {
             DashboardWindow(drive: drive, jobBridge: recorder.jobBridge)
         }
         .windowResizability(.contentSize)
-        .commands { DashboardCommands() }
+        .commands {
+            DashboardCommands()
+            CommandGroup(after: .appInfo) {
+                CheckForUpdatesButton(updater: updaterController.updater)
+            }
+        }
 
         Window("Set up INV Meetings", id: "onboarding") {
             OnboardingWindow(model: onboarding)
@@ -126,6 +143,7 @@ private struct MenuContent: View {
     var settings: MeetingDetectionSettings
     var drive: DriveAuth
     var dictation: DictationSettings
+    var updater: SPUUpdater
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
@@ -201,7 +219,11 @@ private struct MenuContent: View {
 
         Divider()
 
-        Text("core v\(INMeetingsCore.version)")
+        CheckForUpdatesButton(updater: updater)
+        // Read the version from the app bundle (CFBundleShortVersionString/CFBundleVersion) — the single
+        // source of truth that CI stamps from the release tag. (NOT the hardcoded INMeetingsCore.version,
+        // which would freeze the menu at a stale number regardless of the release.)
+        Text(versionString())
 
         Button("Quit INV Meetings") {
             NSApplication.shared.terminate(nil)
@@ -319,6 +341,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             DashboardLauncher.shared.open?()
             if let id { DashboardLauncher.shared.selectMeeting(id) }
         }
+    }
+}
+
+/// "Check for Updates…" menu item. Disables itself while a check can't run (e.g. one's already in flight),
+/// tracking Sparkle's KVO `canCheckForUpdates`. Sparkle's standard controller drives the update UI itself.
+/// Mirrors Sparkle's documented SwiftUI integration; used in both the app menu and the menu-bar dropdown.
+struct CheckForUpdatesButton: View {
+    @ObservedObject private var model: CheckForUpdatesModel
+    private let updater: SPUUpdater
+    init(updater: SPUUpdater) {
+        self.updater = updater
+        self.model = CheckForUpdatesModel(updater: updater)
+    }
+    var body: some View {
+        Button("Check for Updates…") { updater.checkForUpdates() }
+            .disabled(!model.canCheckForUpdates)
+    }
+}
+
+@MainActor
+private final class CheckForUpdatesModel: ObservableObject {
+    @Published var canCheckForUpdates = false
+    init(updater: SPUUpdater) {
+        updater.publisher(for: \.canCheckForUpdates).assign(to: &$canCheckForUpdates)
     }
 }
 

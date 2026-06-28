@@ -1,0 +1,40 @@
+# .github/workflows/ci.yml
+#
+# Test gate. Runs on every push/PR to main so main stays releasable, AND is invoked by the release
+# workflow (release.yml) via `workflow_call` so a release can't publish if tests fail — the tests are
+# defined ONCE here and reused, so the two paths can never drift apart.
+
+name: CI
+
+'on':
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_call:   # let release.yml run these same jobs as a pre-release gate
+
+permissions:
+  contents: read
+
+jobs:
+  swift-tests:
+    name: Swift Core tests (INMeetingsCore)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: swift test
+        run: swift test
+
+  pipeline-tests:
+    name: Python pipeline tests + ruff
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      # uv manages the pinned Python 3.11 venv the pipeline needs (senko requires <3.14).
+      - uses: astral-sh/setup-uv@v5
+      - name: pytest + ruff
+        working-directory: pipeline
+        run: |
+          uv sync --group dev
+          uv run python -m pytest tests/
+          uvx ruff check in_meetings_pipeline tests

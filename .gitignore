@@ -12,7 +12,8 @@
 # --- Swift / Xcode build artifacts ---
 .build/
 DerivedData/
-dist/                         # local unsigned .dmg output (make dmg)
+# local unsigned .dmg output (make dmg)
+dist/
 Apps/*/build/
 # XcodeGen output — project.yml is the source of truth (`make gen` regenerates)
 Apps/*/*.xcodeproj
@@ -24,3 +25,6 @@ pipeline/.venv/
 __pycache__/
 *.pyc
 .ruff_cache/
+
+# local-only secrets (Sparkle private key export); never committed
+.secrets/

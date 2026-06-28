@@ -96,7 +96,7 @@ branded and have the D‑U‑N‑S ready.
 - `make dist`: build → **codesign** (Developer ID) → **`notarytool submit --wait`** → **`stapler staple`** →
   package a **drag-to-`/Applications` `.dmg`**.
 - **Launch-at-login** (`SMAppService`) wired against the *installed* app + quiet-login (no dashboard pop).
-- **Sparkle** auto-update (needs Developer ID + notarization + EdDSA keys).
+- **Sparkle** auto-update — ✅ already built (EdDSA, account-independent; activate per "Auto-update" below).
 - Install-test on a **second Mac** (clean Gatekeeper + audio-TCC grant).
 
 ## Not needed
@@ -153,41 +153,61 @@ Each account-gated step is wrapped in `if: ${{ secrets.DEVELOPER_ID_CERT != '' }
 | Sign | ❌ unsigned | ✅ Developer ID + Hardened Runtime |
 | Notarize | ❌ | ✅ `notarytool submit --wait` + `stapler staple` |
 | GitHub Release | ✅ unsigned `.dmg` | ✅ also signed `.dmg` + `.zip` |
-| Auto-update | ❌ | ✅ Sparkle 2 appcast via `gh-pages` |
-| Gatekeeper | right-click → Open | transparent |
+| Auto-update | ✅ Sparkle 2 appcast via `gh-pages` (needs the `SPARKLE_ED_PRIVATE_KEY` secret + Pages — **no account**) | same, over the signed build |
+| Gatekeeper (first install) | right-click → Open | transparent |
 
-### What to flip when the account lands
+### Auto-update (Sparkle) — DONE in the app; works WITHOUT the Apple account
 
-**In the app (project.yml / Info.plist):**
-- Add Sparkle 2 as an SPM dependency (`https://github.com/sparkle-project/Sparkle`, `2.x`).
-- Run `generate_keys` (Sparkle CLI) once → store the private key as secret `SPARKLE_ED_PRIVATE_KEY`
-  → add the public key as `SUPublicEDKey` in `Apps/INMeetings/project.yml` under `info`.
-- Add `SUFeedURL` pointing at `https://<org>.github.io/IN-meetings/appcast.xml`.
-- Wire `SPUStandardUpdaterController` + a "Check for Updates…" menu item.
-- Set `CODE_SIGN_STYLE = Manual`, `CODE_SIGN_IDENTITY = Developer ID Application`,
-  `ENABLE_HARDENED_RUNTIME = YES`, and the `-spks`/`-spki` InstallerLauncher entitlements
-  (needed by Sparkle's installer helper).
+> **Updated 2026-06-28.** The app-side Sparkle integration is **complete** and Sparkle's update integrity
+> is **EdDSA-based, independent of Apple Developer-ID/notarization** — so auto-update works for the
+> internal *unsigned* builds too. The $99 account only gates a **Gatekeeper-clean first install**, not
+> updates. (Earlier this doc treated Sparkle as fully account-gated; that was over-conservative.)
 
-**In GitHub Actions (add these secrets):**
+**Already done in the app** (`Apps/INMeetings/…`):
+- Sparkle 2 SPM dependency (`project.yml`); `SPUStandardUpdaterController` started at launch.
+- "Check for Updates…" in the app menu **and** the menu-bar dropdown.
+- `Info.plist`: `SUFeedURL` → `https://yuvinv.github.io/IN-meetings/appcast.xml`, `SUPublicEDKey`
+  (the generated public key), `SUEnableAutomaticChecks`, `SUScheduledCheckInterval` (daily).
+- EdDSA keypair generated: public key embedded; **private key exported to
+  `.secrets/sparkle_ed_private_key.txt` (gitignored)**.
+
+**To turn the update FEED on — 3 steps, NO Apple account needed:**
+1. **Add the GitHub secret `SPARKLE_ED_PRIVATE_KEY`** = the contents of `.secrets/sparkle_ed_private_key.txt`
+   (repo → Settings → Secrets and variables → Actions → New repository secret).
+2. **Enable GitHub Pages** (repo → Settings → Pages → Source: `gh-pages` branch, `/ (root)`). The first
+   release run creates the `gh-pages` branch + `appcast.xml`.
+3. **Cut a release:** `make release VERSION=0.2.0`. CI builds the `.dmg` + Sparkle `.zip`, signs + publishes
+   the appcast to `gh-pages`, and creates the GitHub Release. Installed apps then auto-update on next check.
+
+> First *manual* install of an unsigned build still needs **right-click → Open** (Gatekeeper) until the
+> account lands. Every *update* after that is automatic.
+
+### What the Apple Developer account still gates (Gatekeeper only)
+
+Only **Developer-ID signing + notarization**, for a clean first install with no Gatekeeper prompt. When it lands:
+
+**Add these GitHub Actions secrets:**
 
 | Secret name | What it is |
 |---|---|
 | `DEVELOPER_ID_CERT` | Base64-encoded Developer ID Application `.p12` |
 | `DEVELOPER_ID_CERT_PW` | Password for that `.p12` |
 | `AC_API_KEY` | App Store Connect API key (`.p8` contents) |
-| `AC_API_KEY_ID` | Key ID from App Store Connect |
 | `AC_API_KEY_ISSUER` | Issuer ID from App Store Connect |
-| `SPARKLE_ED_PRIVATE_KEY` | EdDSA private key from `generate_keys` |
+| `AC_API_KEY_ID` | Key ID from App Store Connect |
 
-**Enable GitHub Pages** (repo Settings → Pages → Source: `gh-pages` branch, `/ (root)`).
+**Flip the app target** (project.yml): `CODE_SIGN_STYLE = Manual`, `CODE_SIGN_IDENTITY = Developer ID
+Application`, `ENABLE_HARDENED_RUNTIME = YES`. The release workflow's signing/notarization steps then
+activate automatically (they're already authored, gated on `DEVELOPER_ID_CERT`).
 
 ### Version-bump rule (per release)
 
-Bump **both** in `Apps/INMeetings/project.yml` before tagging:
-- `MARKETING_VERSION` — the user-visible version shown in Sparkle's dialog (e.g. `0.2.0`)
-- `CURRENT_PROJECT_VERSION` — the build number Sparkle uses to detect updates (integer, increment monotonically)
-
-Then: `git tag v0.2.0 && git push origin v0.2.0` — the workflow fires automatically.
+**Use `make release VERSION=0.2.0`** (from `main`). It bumps `MARKETING_VERSION` in `project.yml`, commits,
+tags `v0.2.0`, and pushes — the tag fires the workflow. CI then stamps the build at tag time:
+- `MARKETING_VERSION` — from the tag (`v0.2.0` → `0.2.0`); the user-visible version in Sparkle's dialog.
+- `CURRENT_PROJECT_VERSION` — the **CI run number** (monotonic), the build number Sparkle compares to detect
+  a newer release. (So you never hand-manage the build number; the committed `project.yml` value is just a
+  local dev default.)
 
 ### Appcast template
 

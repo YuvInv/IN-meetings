@@ -43,5 +43,16 @@
 			</array>
 		</dict>
 	</array>
+	<!-- Sparkle 2 auto-update. Feed is served from GitHub Pages (gh-pages branch); each appcast
+	     item is EdDSA-signed with the key whose public half is below. Updates work for unsigned
+	     internal builds too — the $99 Apple account only gates a Gatekeeper-clean first install. -->
+	<key>SUFeedURL</key>
+	<string>https://yuvinv.github.io/IN-meetings/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>HHZxCHI5p5v+P+CKjX8sbC+LxAbv2vP3mhWCXwifHAI=</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUScheduledCheckInterval</key>
+	<integer>86400</integer>
 </dict>
 </plist>
