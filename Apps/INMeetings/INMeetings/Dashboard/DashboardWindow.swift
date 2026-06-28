@@ -35,18 +35,8 @@ struct DashboardWindow: View {
         } detail: {
             content
                 .toolbar {
-                    ToolbarItem(placement: .primaryAction) {
-                        Menu {
-                            Picker("Sort", selection: Binding(
-                                get: { storeModel.sortOrder },
-                                set: { storeModel.sortOrder = $0; storeModel.load() })) {
-                                ForEach(MeetingSortOrder.allCases, id: \.self) { Text($0.label).tag($0) }
-                            }
-                        } label: {
-                            Label("Sort", systemImage: "arrow.up.arrow.down")
-                        }
-                        .help("Sort meetings")
-                    }
+                    // Sort moved out of the toolbar — it now lives left-aligned above the meeting
+                    // list (see MeetingListView.sortControl). The calendar toggle stays here.
                     ToolbarItem(placement: .primaryAction) {
                         Button { showCalendar.toggle() } label: {
                             Label("Calendar", systemImage: "calendar")
