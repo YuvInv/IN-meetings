@@ -13,6 +13,11 @@ PROJECT_YML     := $(APP_DIR)/project.yml
 PROJECT_PBXPROJ := $(PROJECT)/project.pbxproj
 APP_PRODUCT     := $(DERIVED_DATA)/Build/Products/$(CONFIGURATION)/$(APP_NAME)
 
+# Google Picker browser API key, injected into the build (never committed). Prefer an env var (CI passes
+# the GOOGLE_PICKER_API_KEY secret), else read the gitignored local file. Empty ⇒ the in-app Drive folder
+# picker shows a "not configured" setup panel instead of a broken web view.
+PICKER_KEY      := $(or $(GOOGLE_PICKER_API_KEY),$(shell cat .secrets/picker_api_key.txt 2>/dev/null))
+
 # Colors
 GREEN  := \033[0;32m
 YELLOW := \033[0;33m
@@ -46,6 +51,7 @@ build-mac: $(PROJECT_PBXPROJ) ## Build the macOS app
 		-configuration $(CONFIGURATION) \
 		-derivedDataPath $(DERIVED_DATA) \
 		-allowProvisioningUpdates \
+		GOOGLE_PICKER_API_KEY="$(PICKER_KEY)" \
 		build 2>&1 | tail -25
 	@if [ ! -d "$(APP_PRODUCT)" ]; then \
 		printf "$(RED)[build]$(NC) FAILED: $(APP_NAME) not found. Try 'make gen'.\n"; \
@@ -75,12 +81,33 @@ dmg: ## Build a LOCAL UNSIGNED Release .dmg for install/onboarding testing (NOT 
 		-configuration Release \
 		-derivedDataPath $(DERIVED_DATA) \
 		-allowProvisioningUpdates \
+		GOOGLE_PICKER_API_KEY="$(PICKER_KEY)" \
 		build 2>&1 | tail -8
 	@if [ ! -d "$(RELEASE_PRODUCT)" ]; then \
 		printf "$(RED)[dmg]$(NC) FAILED: Release app not found. Try 'make gen'.\n"; exit 1; \
 	fi
 	@bash scripts/make-dmg.sh "$(RELEASE_PRODUCT)"
 	@printf "$(YELLOW)[dmg]$(NC) Open it, drag INV Meetings to Applications, then launch from /Applications.\n"
+
+.PHONY: release
+release: ## Cut a release: bump version, tag, push → triggers CI. Usage: make release VERSION=0.2.0 (run from main)
+	@if [ -z "$(VERSION)" ]; then printf "$(RED)[release]$(NC) Set VERSION, e.g. make release VERSION=0.2.0\n"; exit 1; fi
+	@echo "$(VERSION)" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$$' || { printf "$(RED)[release]$(NC) VERSION must be x.y.z (got '$(VERSION)')\n"; exit 1; }
+	@if [ -n "$$(git status --porcelain)" ]; then printf "$(RED)[release]$(NC) Working tree not clean — commit or stash first.\n"; exit 1; fi
+	@BRANCH=$$(git rev-parse --abbrev-ref HEAD); \
+	 if [ "$$BRANCH" != "main" ]; then printf "$(RED)[release]$(NC) Releases must be cut from 'main' (you're on '$$BRANCH'). Merge your work to main first.\n"; exit 1; fi
+	@git fetch origin main --quiet
+	@if [ -n "$$(git rev-list HEAD...origin/main)" ]; then printf "$(RED)[release]$(NC) Local main and origin/main have diverged — pull/push so they match, then release.\n"; exit 1; fi
+	@if git rev-parse "v$(VERSION)" >/dev/null 2>&1; then printf "$(RED)[release]$(NC) Tag v$(VERSION) already exists.\n"; exit 1; fi
+	@printf "$(GREEN)[release]$(NC) Bumping MARKETING_VERSION → $(VERSION)...\n"
+	@sed -i '' -E 's/MARKETING_VERSION: ".*"/MARKETING_VERSION: "$(VERSION)"/' $(PROJECT_YML)
+	@git add $(PROJECT_YML)
+	@git commit -m "chore(release): v$(VERSION)" >/dev/null
+	@git tag "v$(VERSION)"
+	@printf "$(YELLOW)[release]$(NC) Pushing commit + tag v$(VERSION) (the tag triggers the GitHub release workflow)...\n"
+	@git push origin HEAD
+	@git push origin "v$(VERSION)"
+	@printf "$(GREEN)[release]$(NC) Done — watch Actions → Release. (Build number is the CI run number.)\n"
 
 .PHONY: verify-mac
 verify-mac: build-mac ## Build + launch + confirm the menu-bar process is alive

@@ -22,16 +22,23 @@ public enum DriveConfig {
 
     /// The Google Picker **browser API key**. Unlike the OAuth token, this is not a data-access secret —
     /// it only enables the Picker UI to load; access is still authorized by the per-user OAuth token. It
-    /// is the one thing that must be provisioned in GCP project **1062382667236** (enable the *Google
-    /// Picker API*, create a *Browser key*). Paste it into `pickerAPIKeyDefault` or set the env var.
+    /// must be provisioned in GCP project **1062382667236** (enable the *Google Picker API*, create a
+    /// *Browser key*), then **supplied at run/build time — NOT pasted into source.**
+    ///
+    /// Supply it via the `GOOGLE_PICKER_API_KEY` environment variable (dev), or bake it into the release
+    /// build from a gitignored xcconfig / CI secret. Always **restrict** the key in the Cloud Console to
+    /// the Picker API + an HTTP referrer (`https://localhost/*`). Do NOT commit the literal: this repo can
+    /// be public, and `AIza…` keys in public repos get scraped + abused (and auto-disabled by Google).
     public static var pickerAPIKey: String {
-        ProcessInfo.processInfo.environment["GOOGLE_PICKER_API_KEY"] ?? pickerAPIKeyDefault
+        // 1) dev override via env var; 2) the value baked into the bundle at build time (Info.plist
+        // `GooglePickerAPIKey`, expanded from the GOOGLE_PICKER_API_KEY build setting — see the Makefile
+        // and release.yml, which feed it from .secrets/ locally and the CI secret in Actions). Empty ⇒
+        // the picker shows a "not configured" panel. The literal is NEVER committed.
+        if let env = ProcessInfo.processInfo.environment["GOOGLE_PICKER_API_KEY"], !env.isEmpty { return env }
+        if let baked = Bundle.main.object(forInfoDictionaryKey: "GooglePickerAPIKey") as? String,
+           !baked.isEmpty, !baked.hasPrefix("$(") { return baked }
+        return ""
     }
-    /// ← Paste the Browser API key here once provisioned (or set GOOGLE_PICKER_API_KEY). Empty = the
-    /// picker shows a "not configured yet" panel with setup steps instead of a broken web view.
-    /// Browser key for project 1062382667236 (Google Picker API). Restrict it to the Picker API + an HTTP
-    /// referrer (`https://localhost/*`) in the Cloud Console so a repo leak can't burn the project's quota.
-    static let pickerAPIKeyDefault = "AIzaSyCHCgy4Jung7CAx7VKYRLjMCJOChKxzzM4"
 
     /// The GCP **project number** (the numeric prefix of the OAuth client id) — required by the Picker.
     public static let pickerAppID = "1062382667236"

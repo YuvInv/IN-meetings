@@ -24,9 +24,17 @@ name: Release
   workflow_dispatch:
 
 jobs:
+  # Gate: run the full test suite (Swift + Python pipeline) before anything is built or published.
+  # Reuses ci.yml so the tests are defined once. If any test fails, build-and-release never runs.
+  test:
+    uses: ./.github/workflows/ci.yml
+
   build-and-release:
     name: Build & publish
-    runs-on: macos-14
+    needs: test
+    # The app targets macOS 26 (Liquid Glass) → needs the macOS 26 SDK. If the macos-26 runner image
+    # isn't available yet, pin Xcode 26 on macos-15 via maxim-lobanov/setup-xcode instead.
+    runs-on: macos-26
 
     permissions:
       contents: write   # create GitHub Releases
@@ -50,6 +58,23 @@ jobs:
       - name: Install XcodeGen
         run: brew install xcodegen
 
+      # ── 2b. Stamp the version from the tag ──────────────────────────────────
+      # MARKETING_VERSION = the tag minus the leading `v` (user-visible, shown in Sparkle's dialog).
+      # CURRENT_PROJECT_VERSION = the workflow run number — a monotonically increasing build number,
+      # which is what Sparkle compares to decide "this is newer". Patched into project.yml before `make gen`.
+      - name: Stamp version from tag
+        run: |
+          TAG="${{ github.ref_name }}"
+          VERSION="${TAG#v}"
+          case "$VERSION" in
+            [0-9]*) ;;                       # tag looks like v1.2.3 → use it
+            *) VERSION="0.0.0" ;;            # manual/branch dispatch → placeholder
+          esac
+          BUILD="${{ github.run_number }}"
+          sed -i '' -E "s/MARKETING_VERSION: \".*\"/MARKETING_VERSION: \"$VERSION\"/" Apps/INMeetings/project.yml
+          sed -i '' -E "s/CURRENT_PROJECT_VERSION: \".*\"/CURRENT_PROJECT_VERSION: \"$BUILD\"/" Apps/INMeetings/project.yml
+          echo "Stamped INV Meetings $VERSION (build $BUILD)"
+
       # ── 3. Generate .xcodeproj ───────────────────────────────────────────────
       - name: Generate project (make gen)
         run: make gen
@@ -58,6 +83,8 @@ jobs:
       # `make dmg` runs `make gen` then xcodebuild Release then
       # scripts/make-dmg.sh → dist/INMeetings.dmg
       - name: Build unsigned .dmg (make dmg)
+        env:
+          GOOGLE_PICKER_API_KEY: ${{ secrets.GOOGLE_PICKER_API_KEY }}
         run: make dmg
 
       # ── 5. Verify artifact exists ────────────────────────────────────────────
@@ -128,16 +155,19 @@ jobs:
           bash scripts/make-dmg.sh "$APP_PATH"
           mv dist/INMeetings.dmg dist/INMeetings-signed.dmg
 
-      # TODO(account): produce .zip for Sparkle (Sparkle downloads a .zip, not a .dmg)
-      - name: "[account-gated] Package .zip for Sparkle"
-        if: env.HAS_CERT == 'true'
+      # Sparkle downloads a .zip of the .app (not the .dmg). Gated on the EdDSA key, NOT the Apple cert —
+      # auto-update is EdDSA-verified and works for the unsigned internal builds too. If the Developer-ID
+      # signing steps above ran, this zips the now-signed app; otherwise it zips the unsigned app.
+      - name: "[sparkle] Package .zip for Sparkle"
+        if: env.HAS_SPARKLE == 'true'
         run: |
           APP_PATH="DerivedData/Build/Products/Release/INV Meetings.app"
           ditto -c -k --keepParent "$APP_PATH" dist/INMeetings.zip
 
-      # TODO(account): generate Sparkle appcast.xml and push to gh-pages
-      # Requires: Sparkle's generate_appcast binary and SPARKLE_ED_PRIVATE_KEY secret.
-      - name: "[account-gated] Generate Sparkle appcast + publish to gh-pages"
+      # Generate the EdDSA-signed appcast and publish it to the gh-pages branch (GitHub Pages serves it
+      # at the SUFeedURL the app points to). Account-INdependent — needs only SPARKLE_ED_PRIVATE_KEY.
+      # NOTE: a single-item appcast (latest only) — fine for an internal tool; Sparkle just needs "newest".
+      - name: "[sparkle] Generate Sparkle appcast + publish to gh-pages"
         if: env.HAS_SPARKLE == 'true'
         env:
           SPARKLE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
@@ -154,7 +184,7 @@ jobs:
               --ed-key-file /dev/stdin \
               --download-url-prefix \
                 "https://github.com/${{ github.repository }}/releases/download/${RELEASE_TAG}/" \
-              --link "https://${{ github.repository_owner }}.github.io/IN-meetings/appcast.xml"
+              --link "https://yuvinv.github.io/IN-meetings/appcast.xml"
           # Push appcast.xml to gh-pages
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
