@@ -19,7 +19,7 @@ permissions:
 jobs:
   swift-tests:
     name: Swift Core tests (INMeetingsCore)
-    runs-on: macos-14
+    runs-on: macos-15   # macOS 15 SDK — INMeetingsCore uses macOS 15 ScreenCaptureKit APIs (captureMicrophone)
     steps:
       - uses: actions/checkout@v4
       - name: swift test
@@ -27,7 +27,7 @@ jobs:
 
   pipeline-tests:
     name: Python pipeline tests + ruff
-    runs-on: macos-14
+    runs-on: macos-15   # macOS 15 SDK — INMeetingsCore uses macOS 15 ScreenCaptureKit APIs (captureMicrophone)
     steps:
       - uses: actions/checkout@v4
       # uv manages the pinned Python 3.11 venv the pipeline needs (senko requires <3.14).

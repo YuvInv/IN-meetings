@@ -32,7 +32,9 @@ jobs:
   build-and-release:
     name: Build & publish
     needs: test
-    runs-on: macos-14
+    # The app targets macOS 26 (Liquid Glass) → needs the macOS 26 SDK. If the macos-26 runner image
+    # isn't available yet, pin Xcode 26 on macos-15 via maxim-lobanov/setup-xcode instead.
+    runs-on: macos-26
 
     permissions:
       contents: write   # create GitHub Releases
